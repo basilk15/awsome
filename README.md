@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="./docs/assets/awsome-logo-transparent.png" alt="awsome logo" width="420" />
+  <img src="./docs/assets/awsome-logo-transparent.png" alt="awsome logo" width="400" />
 </p>
-
-# awsome
 
 `awsome` is an Electron + Next.js desktop app for visualizing AWS infrastructure as an interactive topology graph.
 
