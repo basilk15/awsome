@@ -1,0 +1,25 @@
+{
+  "name": "awsome",
+  "version": "1.0.0",
+  "description": "Electron desktop app to visualize AWS network topology",
+  "main": "main.js",
+  "scripts": {
+    "start": "concurrently -k \"npm:dev:web\" \"npm:dev:electron\"",
+    "dev:web": "next dev -p 3000",
+    "dev:electron": "wait-on http://localhost:3000 && env -u ELECTRON_RUN_AS_NODE NEXT_DEV_SERVER_URL=http://localhost:3000 electron .",
+    "build:web": "next build",
+    "start:electron": "env -u ELECTRON_RUN_AS_NODE electron ."
+  },
+  "dependencies": {
+    "@aws-sdk/client-ec2": "latest",
+    "@aws-sdk/client-rds": "latest",
+    "@aws-sdk/credential-providers": "latest",
+    "concurrently": "^9.2.1",
+    "cytoscape": "latest",
+    "electron": "latest",
+    "next": "^15.5.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "wait-on": "^8.0.5"
+  }
+}

@@ -1,0 +1,253 @@
+.appShell {
+  width: 100%;
+  height: 100%;
+  color: #eaf2ff;
+  font-family: 'Space Grotesk', 'Trebuchet MS', 'Segoe UI', sans-serif;
+  background:
+    radial-gradient(1200px 700px at 12% 10%, rgba(74, 122, 255, 0.24), transparent 60%),
+    radial-gradient(900px 620px at 90% 18%, rgba(41, 209, 255, 0.18), transparent 55%),
+    linear-gradient(145deg, #090f1f 0%, #0f1b34 40%, #18243b 100%);
+  overflow: hidden;
+}
+
+.landingView {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.landingOrb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(8px);
+  pointer-events: none;
+}
+
+.orbA {
+  width: 380px;
+  height: 380px;
+  left: -90px;
+  top: -70px;
+  background: radial-gradient(circle at 35% 35%, rgba(92, 150, 255, 0.46), rgba(33, 58, 102, 0.08));
+}
+
+.orbB {
+  width: 340px;
+  height: 340px;
+  right: -90px;
+  bottom: -120px;
+  background: radial-gradient(circle at 40% 40%, rgba(58, 220, 255, 0.34), rgba(24, 52, 97, 0.08));
+}
+
+.landingCard {
+  width: min(760px, 92vw);
+  background: rgba(17, 28, 47, 0.5);
+  border: 1px solid rgba(162, 199, 255, 0.28);
+  box-shadow: 0 16px 40px rgba(2, 8, 20, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: 22px;
+  padding: clamp(28px, 5vw, 52px);
+  backdrop-filter: blur(10px);
+}
+
+.landingTitle {
+  margin: 0;
+  font-size: clamp(44px, 11vw, 84px);
+  letter-spacing: 0.02em;
+  line-height: 0.95;
+}
+
+.landingSubtitle {
+  margin: 14px 0 0;
+  color: #9ad4ff;
+  font-weight: 600;
+  font-size: clamp(17px, 3vw, 27px);
+}
+
+.landingDescription {
+  margin: 18px 0 28px;
+  font-size: clamp(14px, 2vw, 17px);
+  line-height: 1.6;
+  color: #adc0de;
+  max-width: 60ch;
+}
+
+.mainView {
+  width: 100%;
+  height: 100%;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.toolbarCard {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(22, 34, 56, 0.45);
+  border: 1px solid rgba(166, 197, 255, 0.23);
+  box-shadow: 0 10px 24px rgba(2, 8, 22, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldGroup label {
+  color: #adc0de;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fieldGroup input {
+  width: 220px;
+  max-width: 48vw;
+  border: 1px solid rgba(158, 186, 234, 0.34);
+  background: rgba(9, 16, 31, 0.62);
+  color: #eaf2ff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.fieldGroup input:focus {
+  outline: none;
+  border-color: #84dbff;
+  box-shadow: 0 0 0 3px rgba(78, 185, 255, 0.2);
+}
+
+.actionsGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.primaryBtn,
+.secondaryBtn {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: transform 120ms ease, box-shadow 180ms ease, opacity 180ms ease, background 180ms ease;
+}
+
+.primaryBtn:hover,
+.secondaryBtn:hover {
+  transform: translateY(-1px);
+}
+
+.primaryBtn:disabled,
+.secondaryBtn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.primaryBtn {
+  color: #ffffff;
+  background: linear-gradient(135deg, #3ca4ff, #1890ff);
+  box-shadow: 0 8px 18px rgba(27, 126, 223, 0.3);
+}
+
+.secondaryBtn {
+  color: #dbecff;
+  background: rgba(53, 86, 136, 0.6);
+  border: 1px solid rgba(156, 196, 255, 0.28);
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(173, 202, 239, 0.3);
+  border-top-color: #44d38e;
+  animation: spin 0.86s linear infinite;
+}
+
+.spinnerHidden {
+  visibility: hidden;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.errorBanner {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 142, 170, 0.42);
+  background: rgba(98, 23, 44, 0.6);
+  color: #ffd4df;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.status {
+  min-height: 24px;
+  font-size: 14px;
+  color: #adc0de;
+  padding: 0 3px;
+}
+
+.graphPanel {
+  flex: 1 1 auto;
+  min-height: 300px;
+  border-radius: 16px;
+  border: 1px solid rgba(160, 193, 244, 0.24);
+  background:
+    linear-gradient(180deg, rgba(13, 22, 40, 0.72), rgba(9, 17, 31, 0.82)),
+    radial-gradient(ellipse at top right, rgba(84, 122, 186, 0.18), transparent 52%);
+  box-shadow: 0 14px 34px rgba(3, 8, 18, 0.4), inset 0 0 30px rgba(124, 170, 255, 0.08);
+  overflow: hidden;
+}
+
+.cy {
+  width: 100%;
+  height: 100%;
+  min-height: 300px;
+}
+
+@media (max-width: 900px) {
+  .mainView {
+    padding: 12px;
+  }
+
+  .toolbarCard {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .fieldGroup {
+    width: 100%;
+  }
+
+  .fieldGroup input {
+    width: 100%;
+    max-width: none;
+  }
+
+  .actionsGroup {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
