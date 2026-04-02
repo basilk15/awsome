@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./awsome.png" alt="awsome logo" width="360" />
+  <img src="./docs/assets/awsome-logo-transparent.png" alt="awsome logo" width="420" />
 </p>
 
 # awsome
