@@ -1,25 +1,26 @@
 {
-  "name": "awsome",
+  "name": "graphivo",
   "version": "1.0.0",
-  "description": "Electron desktop app to visualize AWS network topology",
-  "main": "main.js",
+  "description": "Tauri desktop app to visualize AWS network topology",
   "scripts": {
-    "start": "concurrently -k \"npm:dev:web\" \"npm:dev:electron\"",
-    "dev:web": "next dev -p 3000",
-    "dev:electron": "wait-on http://localhost:3000 && env -u ELECTRON_RUN_AS_NODE NEXT_DEV_SERVER_URL=http://localhost:3000 electron .",
-    "build:web": "next build",
-    "start:electron": "env -u ELECTRON_RUN_AS_NODE electron ."
+    "start": "tauri dev",
+    "dev": "tauri dev",
+    "dev:web": "vite",
+    "build:web": "vite build",
+    "preview:web": "vite preview",
+    "build": "tauri build",
+    "tauri": "tauri"
   },
   "dependencies": {
-    "@aws-sdk/client-ec2": "latest",
-    "@aws-sdk/client-rds": "latest",
-    "@aws-sdk/credential-providers": "latest",
-    "concurrently": "^9.2.1",
+    "aws-icons": "^3.3.0",
+    "aws-svg-icons": "^3.0.0-2021-07-30",
     "cytoscape": "latest",
-    "electron": "latest",
-    "next": "^15.5.3",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "wait-on": "^8.0.5"
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.1.0"
   }
 }

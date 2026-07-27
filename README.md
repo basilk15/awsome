@@ -2,9 +2,9 @@
   <img src="./docs/assets/awsome-logo-transparent.png" alt="awsome logo" width="400" />
 </p>
 
-`awsome` is an Electron + Next.js desktop app for visualizing AWS infrastructure as an interactive topology graph.
+`Graphivo` is a Tauri desktop app for visualizing AWS infrastructure as an interactive topology graph.
 
-It uses a single unified Next.js frontend and an Electron preload bridge to fetch AWS resources from a local AWS profile, transform them into graph data, and render them with Cytoscape.
+It uses a lightweight Vite + React frontend and a native Rust backend. The Rust backend reads the selected local AWS profile, fetches live resources with the AWS SDK for Rust, transforms them into graph data, and returns it to the Cytoscape UI through a Tauri command.
 
 ## What It Shows
 
@@ -16,19 +16,20 @@ It uses a single unified Next.js frontend and an Electron preload bridge to fetc
 
 ## Stack
 
-- Electron
-- Next.js
+- Tauri 2
+- Rust
+- Vite
 - React
 - Cytoscape
-- AWS SDK for JavaScript
+- AWS SDK for Rust
 
 ## How It Works
 
-1. The Electron main process creates the desktop window and exposes a safe IPC bridge through `preload.js`.
-2. The Next.js UI calls `window.awsAPI.fetchTopology()`.
-3. The backend fetches AWS resources using the selected local profile and region.
-4. The graph builder converts those resources into nodes and edges.
-5. Cytoscape renders the topology in the desktop UI.
+1. Tauri loads the Vite-built React frontend in a native desktop window.
+2. The UI calls Tauri's typed `fetch_topology` command.
+3. Rust loads the selected AWS profile and region from local AWS shared configuration.
+4. The Rust command fetches AWS resources and builds nodes and edges, including VPC-to-security-group relationships.
+5. Cytoscape renders the result and the UI exposes selected-resource details.
 
 ## Development
 
@@ -38,32 +39,29 @@ Install dependencies:
 npm install
 ```
 
-Run the app in development:
+Run the Tauri desktop app in development:
 
 ```bash
 npm run start
 ```
 
-This starts:
-
-- Next.js on port `3000`
-- Electron connected to the Next.js dev server
+This starts Vite on port `5173` and launches the Tauri desktop window against it.
 
 ## Production Flow
 
-Build the Next.js app:
+Create a production desktop bundle:
+
+```bash
+npm run build
+```
+
+To only build the static frontend:
 
 ```bash
 npm run build:web
 ```
 
-Start Electron in production mode:
-
-```bash
-npm run start:electron
-```
-
-In production, Electron starts a local Next.js server from the built `.next` output and loads that app inside the desktop window.
+Tauri packages the Vite build from `dist/` inside the native application; it does not start a local Node.js server in production.
 
 ## AWS Usage
 
@@ -79,16 +77,12 @@ Then load the live topology from the app UI.
 ## Project Structure
 
 ```text
-backend/              AWS fetching and graph building
-pages/                Next.js UI
+src/                  Vite + React UI
 public/assets/        AWS service assets used by the UI
-styles/               Next.js styling
-main.js               Electron main process
-preload.js            Electron preload bridge
+src-tauri/            Tauri configuration and Rust AWS topology command
 ```
 
 ## Notes
 
-- The legacy plain Electron renderer has been removed.
-- The backend fetch and graph-building logic remain unchanged.
-- The current app focuses on live topology visualization rather than infrastructure editing/apply workflows.
+- There is no Electron, Next.js, or Node.js AWS backend in the app runtime.
+- The current app focuses on live topology visualization rather than infrastructure editing or apply workflows.
