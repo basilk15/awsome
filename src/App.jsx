@@ -46,6 +46,7 @@ import bedrockIcon from 'aws-icons/icons/architecture-service/AmazonBedrock.svg'
 import sagemakerIcon from 'aws-icons/icons/architecture-service/AmazonSageMakerAI.svg';
 import rekognitionIcon from 'aws-icons/icons/architecture-service/AmazonRekognition.svg';
 import Landing from './Landing';
+import usePlanningDocument from './usePlanningDocument';
 
 const SERVICE_MAP = {
   vpc: { heading: 'VPC', icon: 'aws/amazon-vpc.svg', fallbackColor: '#7b3fe4' },
@@ -224,6 +225,9 @@ function Icon({ name, size = 16 }) {
     chevronDown: <path d="m7 10 5 5 5-5" />,
     resizeHorizontal: <><path d="m8 7-5 5 5 5M16 7l5 5-5 5M3 12h18" /></>,
     resizeDiagonal: <><path d="M8 16 16 8M11 17h6v-6" /></>,
+    plus: <><path d="M12 5v14M5 12h14" /></>,
+    download: <><path d="M12 3v12M7.5 10.5 12 15l4.5-4.5" /><path d="M5 20h14" /></>,
+    upload: <><path d="M12 16V4M7.5 8.5 12 4l4.5 4.5" /><path d="M5 20h14" /></>,
     info: <><circle cx="12" cy="12" r="8.5" /><path d="M12 10.8v5.1M12 7.8h.01" /></>
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.info}</svg>;
@@ -239,17 +243,32 @@ function PlanningServiceIcon({ service, small = false }) {
 function PlanningWorkspace() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [search, setSearch] = useState('');
-  const [nodes, setNodes] = useState([]);
-  const [edges, setEdges] = useState([]);
+  const {
+    planningDocument,
+    nodes,
+    edges,
+    canvasZoom,
+    canvasPan,
+    feedback,
+    lastSavedAt,
+    setNodes,
+    setEdges,
+    setCanvasZoom,
+    setCanvasPan,
+    renameDocument,
+    createNewArchitecture,
+    importArchitecture,
+    exportArchitecture
+  } = usePlanningDocument(PLANNING_SERVICES);
   const [selectedId, setSelectedId] = useState(null);
   const [connectionSource, setConnectionSource] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
   const [paletteWidth, setPaletteWidth] = useState(252);
-  const [canvasZoom, setCanvasZoom] = useState(1);
-  const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 });
   const [isCanvasPanning, setIsCanvasPanning] = useState(false);
   const [removalHover, setRemovalHover] = useState(false);
+  const [nameDraft, setNameDraft] = useState(planningDocument.name);
   const canvasRef = useRef(null);
+  const importInputRef = useRef(null);
   const nodeInteractionRef = useRef(null);
   const canvasPanInteractionRef = useRef(null);
   const canvasPanDidMoveRef = useRef(false);
@@ -261,7 +280,29 @@ function PlanningWorkspace() {
   const query = search.trim().toLowerCase();
   const availableServices = PLANNING_SERVICES.filter((service) => (selectedCategory === 'All' || service.category === selectedCategory) && (!query || service.name.toLowerCase().includes(query)));
   const selectedNode = nodes.find((node) => node.id === selectedId);
-  const selectedServiceDetails = selectedNode ? PLANNING_SERVICE_DETAILS[selectedNode.service.key] : null;
+  const selectedNodeService = selectedNode ? PLANNING_SERVICES.find((service) => service.key === selectedNode.serviceKey) : null;
+  const selectedServiceDetails = selectedNode ? PLANNING_SERVICE_DETAILS[selectedNode.serviceKey] : null;
+
+  useEffect(() => {
+    setNameDraft(planningDocument.name);
+    setSelectedId(null);
+    setConnectionSource(null);
+  }, [planningDocument.id, planningDocument.name]);
+
+  const commitDocumentName = () => {
+    if (!renameDocument(nameDraft)) setNameDraft(planningDocument.name);
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    try {
+      importArchitecture(await file.text(), file.name);
+    } catch (error) {
+      importArchitecture('', `${file.name} (${error.message})`);
+    }
+  };
 
   const handleCanvasWheel = useCallback((event) => {
     if (!event.ctrlKey && !event.metaKey) return;
@@ -304,7 +345,7 @@ function PlanningWorkspace() {
     const id = `${service.key}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setNodes((current) => [...current, {
       id,
-      service,
+      serviceKey: service.key,
       x: Math.max(18, Math.min(PLANNING_CANVAS_SIZE - DEFAULT_PLANNING_NODE_WIDTH - 18, point.x)),
       y: Math.max(18, Math.min(PLANNING_CANVAS_SIZE - DEFAULT_PLANNING_NODE_HEIGHT - 18, point.y)),
       width: DEFAULT_PLANNING_NODE_WIDTH,
@@ -502,10 +543,15 @@ function PlanningWorkspace() {
     <div className={styles.planningToolbar}>
       <div><span className={styles.planningEyebrow}>Architecture workspace</span><h1>Design your AWS architecture</h1><p>Drag services onto the canvas, arrange them, then connect the flow.</p></div>
       <div className={styles.planningActions}>
+        <button className={styles.secondaryBtn} type="button" onClick={createNewArchitecture}><Icon name="plus" size={15} /> New architecture</button>
+        <button className={styles.secondaryBtn} type="button" onClick={() => importInputRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
+        <input ref={importInputRef} className={styles.hiddenFileInput} type="file" accept=".json,.graphivo.json,application/json" onChange={handleImportFile} tabIndex={-1} />
+        <button className={styles.secondaryBtn} type="button" onClick={exportArchitecture}><Icon name="download" size={15} /> Export</button>
         <button className={`${styles.secondaryBtn} ${connectionSource ? styles.activeTool : ''}`} type="button" onClick={() => setConnectionSource((value) => value ? null : 'armed')}><Icon name="link" size={15} /> {connectionSource ? 'Cancel link' : 'Connect services'}</button>
         <span className={styles.nodeCount}>{nodes.length} service{nodes.length === 1 ? '' : 's'} placed</span>
       </div>
     </div>
+    {feedback ? <div className={`${styles.planningFeedback} ${styles[`planningFeedback${feedback.type.charAt(0).toUpperCase()}${feedback.type.slice(1)}`]}`} role={feedback.type === 'error' ? 'alert' : 'status'}><Icon name={feedback.type === 'error' ? 'info' : 'layers'} size={14} /><span>{feedback.text}</span></div> : null}
     <div className={styles.planningLayout} style={{ '--palette-width': `${paletteWidth}px` }}>
       <aside ref={paletteRef} className={`${styles.servicePalette} ${removalHover ? styles.servicePaletteRemovalTarget : ''}`} aria-label="AWS service palette">
         {removalHover ? <div className={styles.removalDropHint}>Release to remove from diagram</div> : null}
@@ -531,7 +577,7 @@ function PlanningWorkspace() {
         ><Icon name="resizeHorizontal" size={15} /></div>
       </aside>
       <section className={styles.planningCanvasPanel} aria-label="AWS architecture canvas">
-        <div className={styles.planningCanvasTop}><div className={styles.canvasTitle}><Icon name="layers" size={15} /><span>Untitled architecture</span><small>Draft</small></div><div className={styles.canvasMeta}><span className={styles.canvasHint}>{connectionSource ? 'Select two services to create a connection' : 'Drop a service here to add it'}</span><span className={styles.zoomHint}>{Math.round(canvasZoom * 100)}% · Ctrl + scroll</span></div></div>
+        <div className={styles.planningCanvasTop}><div className={styles.canvasTitle}><Icon name="layers" size={15} /><input aria-label="Architecture name" title="Rename architecture" maxLength={120} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={commitDocumentName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setNameDraft(planningDocument.name); event.currentTarget.blur(); } }} /><small>{feedback?.type === 'info' ? 'Saving' : lastSavedAt ? 'Saved' : 'Draft'}</small></div><div className={styles.canvasMeta}><span className={styles.canvasHint}>{connectionSource ? 'Select two services to create a connection' : 'Drop a service here to add it'}</span><span className={styles.zoomHint}>{Math.round(canvasZoom * 100)}% · Ctrl + scroll</span></div></div>
         <div className={`${styles.planningCanvas} ${isCanvasPanning ? styles.planningCanvasPanning : ''}`} ref={canvasRef} onPointerDown={beginCanvasPan} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop} onPointerMove={(event) => { moveCanvasPan(event); moveNode(event); }} onPointerUp={(event) => { endCanvasPan(); endNodeInteraction(event); }} onPointerCancel={(event) => { endCanvasPan(); endNodeInteraction(event); }} onClick={handleCanvasClick}>
           <div className={styles.planningCanvasSurface} style={{ '--canvas-zoom': canvasZoom, '--canvas-pan-x': `${canvasPan.x}px`, '--canvas-pan-y': `${canvasPan.y}px` }}>
           <div className={styles.canvasGrid} />
@@ -551,7 +597,7 @@ function PlanningWorkspace() {
               if (event.key === 'Enter' || event.key === ' ') handleNodeClick(event, node);
             }}
           >
-            <PlanningServiceIcon service={node.service} /><span>{node.name}</span>
+            <PlanningServiceIcon service={PLANNING_SERVICES.find((service) => service.key === node.serviceKey)} /><span>{node.name}</span>
             <span
               className={styles.nodeResizeHandle}
               role="button"
@@ -568,7 +614,7 @@ function PlanningWorkspace() {
         </div>
       </section>
       <aside className={styles.planningInspector} aria-label="Architecture details">
-        {selectedNode ? <><span className={styles.panelKicker}>AWS service details</span><PlanningServiceIcon service={selectedNode.service} /><h2>{selectedNode.name}</h2><p>{selectedServiceDetails?.[0] || 'AWS managed service selected for this architecture.'}</p><div className={styles.realWorldUse}><span>Common use</span><p>{selectedServiceDetails?.[1] || 'Use this service as part of your planned AWS workload.'}</p></div><dl><div><dt>Category</dt><dd>{selectedNode.service.category}</dd></div><div><dt>Connections</dt><dd>{edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id).length}</dd></div></dl></> : <div className={styles.plannerInspectorEmpty}><span><Icon name="grid" size={20} /></span><h2>Architecture details</h2><p>Select a service in the canvas to see what it does and how it is commonly used in a real AWS workload.</p></div>}
+        {selectedNode && selectedNodeService ? <><span className={styles.panelKicker}>AWS service details</span><PlanningServiceIcon service={selectedNodeService} /><h2>{selectedNode.name}</h2><p>{selectedServiceDetails?.[0] || 'AWS managed service selected for this architecture.'}</p><div className={styles.realWorldUse}><span>Common use</span><p>{selectedServiceDetails?.[1] || 'Use this service as part of your planned AWS workload.'}</p></div><dl><div><dt>Category</dt><dd>{selectedNodeService.category}</dd></div><div><dt>Connections</dt><dd>{edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id).length}</dd></div></dl></> : <div className={styles.plannerInspectorEmpty}><span><Icon name="grid" size={20} /></span><h2>Architecture details</h2><p>Select a service in the canvas to see what it does and how it is commonly used in a real AWS workload.</p></div>}
       </aside>
     </div>
   </>;

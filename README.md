@@ -14,6 +14,21 @@ It uses a lightweight Vite + React frontend and a native Rust backend. The Rust 
 - RDS instances
 - Security groups
 
+Graphivo also includes a Planning mode for arranging AWS services on a manual architecture canvas without changing live infrastructure.
+
+## Planning Architectures
+
+Open **Planning mode** from the top navigation. Planning documents support:
+
+- In-place renaming from the title above the canvas
+- Automatic local saving of services, connections, sizes, positions, and the current zoom/pan
+- Automatic restoration when Planning mode is opened again
+- **New architecture**, **Import**, and **Export** controls for starting over or moving a plan as JSON
+
+Creating a new architecture or importing over a non-empty one asks for confirmation first. Export any plan you want to keep as a separate file; Graphivo currently restores the most recently saved planning document rather than maintaining a document library. Imported files are validated against the AWS service catalog, and an invalid or incompatible file is left unopened with an explanation in the UI.
+
+Planning data is stored only on the current device in the app webview's local storage under `graphivo.planning.last-document`. JSON files use the versioned `graphivo/planning-document` schema. Version 1 includes the document id and name, timestamps, nodes (`serviceKey`, custom name, position, and size), edges, and canvas viewport. If saved local data is corrupt or incompatible, Graphivo opens a safe blank document and leaves the user free to import a valid export.
+
 ## Stack
 
 - Tauri 2
@@ -77,12 +92,13 @@ Then load the live topology from the app UI.
 ## Project Structure
 
 ```text
-src/                  Vite + React UI
-public/assets/        AWS service assets used by the UI
-src-tauri/            Tauri configuration and Rust AWS topology command
+src/                         Vite + React UI
+src/planningDocument.mjs     Planning schema, validation, migration, and storage
+public/assets/               AWS service assets used by the UI
+src-tauri/                   Tauri configuration and Rust AWS topology command
 ```
 
 ## Notes
 
 - There is no Electron, Next.js, or Node.js AWS backend in the app runtime.
-- The current app focuses on live topology visualization rather than infrastructure editing or apply workflows.
+- Planning mode is a local design tool; it does not edit or apply AWS infrastructure.
