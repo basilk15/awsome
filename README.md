@@ -18,6 +18,7 @@ It uses a lightweight Vite + React frontend and a native Rust backend. The Rust 
 - Route tables and their effective subnet associations/routes
 - Application Load Balancers
 - Network Load Balancers
+- Registered EC2 targets behind Application and Network Load Balancers
 
 Graphivo also includes a Planning mode for arranging AWS services on a manual architecture canvas without changing live infrastructure.
 
@@ -28,11 +29,14 @@ Open **Planning mode** from the top navigation. Planning documents support:
 - In-place renaming from the title above the canvas
 - Automatic local saving of services, connections, sizes, positions, and the current zoom/pan
 - Automatic restoration when Planning mode is opened again
-- **New architecture**, **Import**, and **Export** controls for starting over or moving a plan as JSON
+- A local architecture library for switching between multiple saved designs
+- Undo/redo controls and keyboard shortcuts for recovering autosaved edits
+- Direct removal of services and individual connections
+- **New architecture**, **Import**, **Export**, and confirmed **Delete** controls
 
-Creating a new architecture or importing over a non-empty one asks for confirmation first. Export any plan you want to keep as a separate file; Graphivo currently restores the most recently saved planning document rather than maintaining a document library. Imported files are validated against the AWS service catalog, and an invalid or incompatible file is left unopened with an explanation in the UI.
+Imported files are validated against the AWS service catalog, and an invalid or incompatible file is left unopened with an explanation in the UI. Importing a document whose id already exists asks before replacing that saved architecture. Deleting an architecture also requires confirmation.
 
-Planning data is stored only on the current device in the app webview's local storage under `graphivo.planning.last-document`. JSON files use the versioned `graphivo/planning-document` schema. Version 1 includes the document id and name, timestamps, nodes (`serviceKey`, custom name, position, size, and optional live-resource provenance), edges, and canvas viewport. If saved local data is corrupt or incompatible, Graphivo opens a safe blank document and leaves the user free to import a valid export.
+Planning data is stored only on the current device in the app webview's local storage. The library uses a versioned index with one storage entry per architecture and safely imports the older `graphivo.planning.last-document` save without deleting it. JSON files use the versioned `graphivo/planning-document` schema. Version 1 includes the document id and name, timestamps, nodes (`serviceKey`, custom name, position, size, and optional live-resource provenance), edges, and canvas viewport. If saved local data is corrupt or incompatible, Graphivo isolates unreadable entries and leaves valid architectures available.
 
 ## Stack
 
@@ -48,7 +52,7 @@ Planning data is stored only on the current device in the app webview's local st
 1. Tauri loads the Vite-built React frontend in a native desktop window.
 2. The UI calls Tauri's typed `fetch_topology` command.
 3. Rust loads the selected AWS profile and region from local AWS shared configuration.
-4. The Rust command follows every AWS pagination token, then builds nodes and defensible network relationships only after the complete regional inventory is available.
+4. The Rust command follows every AWS pagination token, fetches load-balancer target registrations with bounded concurrency, then builds nodes and defensible network relationships only after the complete regional inventory is available.
 5. Cytoscape renders the result and the UI exposes selected-resource details.
 
 ## Live topology to architecture plan
@@ -106,6 +110,8 @@ Then load the live topology from the app UI.
 
 Live mode is read-only. It makes regional inventory calls and does not create, update, or delete AWS resources. VPC, subnet, EC2, security-group, RDS, gateway, route-table, and ELBv2 inventory is fully paginated so large accounts are not silently truncated.
 
+Inside the live topology canvas, use the mouse wheel to zoom around the pointer, drag the background to pan, and drag a resource toward any canvas edge to automatically reveal more workspace in that direction. The fit button restores the complete topology to view.
+
 ## Project Structure
 
 ```text
@@ -123,3 +129,4 @@ src-tauri/                   Tauri configuration and Rust AWS topology command
 - Edges are emitted only when both endpoint resources were discovered. Subnets without an explicit route-table association are connected to the VPC's main route table because that is the effective AWS routing behavior.
 - Route targets are shown for discovered internet gateways, NAT gateways, and EC2 instances. Targets outside the supported inventory (for example transit gateways, VPC endpoints, peering connections, and egress-only internet gateways) are not represented yet.
 - ELBv2 discovery currently visualizes Application and Network Load Balancers. Gateway Load Balancers are outside the supported-resource set.
+- Load-balancer target relationships currently represent registered EC2 instance targets. Listener/rule routing, target health state, and IP/Lambda/ALB target types are not represented yet.

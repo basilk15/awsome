@@ -4,7 +4,9 @@ use aws_sdk_ec2::{
     Client as Ec2Client,
 };
 use aws_sdk_elasticloadbalancingv2::{
-    types::{LoadBalancer, LoadBalancerTypeEnum},
+    types::{
+        LoadBalancer, LoadBalancerTypeEnum, TargetGroup, TargetHealthDescription, TargetTypeEnum,
+    },
     Client as Elbv2Client,
 };
 use aws_sdk_rds::{types::DbInstance, Client as RdsClient};
@@ -58,6 +60,8 @@ struct Inventory {
     nat_gateways: Vec<NatGateway>,
     route_tables: Vec<RouteTable>,
     load_balancers: Vec<LoadBalancer>,
+    target_groups: Vec<TargetGroup>,
+    target_health: BTreeMap<String, Vec<TargetHealthDescription>>,
 }
 
 #[derive(Default)]
@@ -304,6 +308,79 @@ async fn list_load_balancers(client: &Elbv2Client) -> Result<Vec<LoadBalancer>, 
         ))
     })
     .await
+}
+
+async fn list_target_groups(client: &Elbv2Client) -> Result<Vec<TargetGroup>, String> {
+    paginate(|marker| async move {
+        let page = client
+            .describe_target_groups()
+            .set_marker(marker)
+            .send()
+            .await
+            .map_err(|error| format!("could not list ELBv2 target groups: {error}"))?;
+        Ok((
+            page.target_groups().to_vec(),
+            page.next_marker().map(str::to_owned),
+        ))
+    })
+    .await
+}
+
+async fn list_target_health(
+    client: &Elbv2Client,
+    target_groups: &[TargetGroup],
+) -> Result<BTreeMap<String, Vec<TargetHealthDescription>>, String> {
+    const MAX_CONCURRENT_REQUESTS: usize = 8;
+
+    let mut target_health = BTreeMap::new();
+    let mut target_group_arns = target_groups
+        .iter()
+        .filter_map(|target_group| target_group.target_group_arn())
+        .map(str::to_owned);
+    let mut requests = tokio::task::JoinSet::new();
+
+    for _ in 0..MAX_CONCURRENT_REQUESTS {
+        let Some(target_group_arn) = target_group_arns.next() else {
+            break;
+        };
+        spawn_target_health_request(&mut requests, client.clone(), target_group_arn);
+    }
+
+    while let Some(result) = requests.join_next().await {
+        let (target_group_arn, descriptions) = result
+            .map_err(|error| format!("ELBv2 target-health inventory task failed: {error}"))??;
+        target_health.insert(target_group_arn, descriptions);
+
+        if let Some(target_group_arn) = target_group_arns.next() {
+            spawn_target_health_request(&mut requests, client.clone(), target_group_arn);
+        }
+    }
+
+    Ok(target_health)
+}
+
+fn spawn_target_health_request(
+    requests: &mut tokio::task::JoinSet<Result<(String, Vec<TargetHealthDescription>), String>>,
+    client: Elbv2Client,
+    target_group_arn: String,
+) {
+    requests.spawn(async move {
+        let response = client
+            .describe_target_health()
+            .target_group_arn(&target_group_arn)
+            .send()
+            .await
+            .map_err(|error| {
+                format!(
+                    "could not list registered targets for ELBv2 target group \
+                     {target_group_arn}: {error}"
+                )
+            })?;
+        Ok((
+            target_group_arn,
+            response.target_health_descriptions().to_vec(),
+        ))
+    });
 }
 
 fn build_graph(inventory: Inventory) -> Graph {
@@ -756,6 +833,55 @@ fn add_inventory_edges(graph: &mut GraphBuilder, inventory: &Inventory) {
             );
         }
     }
+
+    add_load_balancer_target_edges(graph, inventory);
+}
+
+fn add_load_balancer_target_edges(graph: &mut GraphBuilder, inventory: &Inventory) {
+    let load_balancer_nodes = inventory
+        .load_balancers
+        .iter()
+        .filter_map(|load_balancer| {
+            let resource_type = load_balancer_resource_type(load_balancer)?;
+            Some((
+                load_balancer.load_balancer_arn()?,
+                load_balancer_node_id(load_balancer, resource_type)?,
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for target_group in &inventory.target_groups {
+        if target_group.target_type() != Some(&TargetTypeEnum::Instance) {
+            continue;
+        }
+        let Some(target_group_arn) = target_group.target_group_arn() else {
+            continue;
+        };
+        let Some(targets) = inventory.target_health.get(target_group_arn) else {
+            continue;
+        };
+
+        for load_balancer_arn in target_group.load_balancer_arns() {
+            let Some(load_balancer_node) = load_balancer_nodes.get(load_balancer_arn.as_str())
+            else {
+                continue;
+            };
+            for instance_id in targets
+                .iter()
+                .filter_map(|description| description.target())
+                .filter_map(|target| target.id())
+            {
+                graph.add_edge(
+                    format!(
+                        "edge-load-balancer-ec2-{load_balancer_node}-{target_group_arn}-{instance_id}"
+                    ),
+                    load_balancer_node.clone(),
+                    format!("ec2-{instance_id}"),
+                    "routes to registered EC2 target",
+                );
+            }
+        }
+    }
 }
 
 fn add_route_table_edges(graph: &mut GraphBuilder, inventory: &Inventory) {
@@ -900,6 +1026,7 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         nat_gateways,
         route_tables,
         load_balancers,
+        target_groups,
     ) = tokio::try_join!(
         list_vpcs(&ec2),
         list_subnets(&ec2),
@@ -910,8 +1037,13 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         list_nat_gateways(&ec2),
         list_route_tables(&ec2),
         list_load_balancers(&elbv2),
+        list_target_groups(&elbv2),
     )
     .map_err(|error| format!("AWS inventory request failed: {error}"))?;
+
+    let target_health = list_target_health(&elbv2, &target_groups)
+        .await
+        .map_err(|error| format!("AWS inventory request failed: {error}"))?;
 
     Ok(build_graph(Inventory {
         vpcs,
@@ -923,6 +1055,8 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         nat_gateways,
         route_tables,
         load_balancers,
+        target_groups,
+        target_health,
     }))
 }
 
@@ -932,7 +1066,7 @@ mod tests {
     use aws_sdk_ec2::types::{
         GroupIdentifier, InternetGatewayAttachment, Route, RouteTableAssociation,
     };
-    use aws_sdk_elasticloadbalancingv2::types::AvailabilityZone;
+    use aws_sdk_elasticloadbalancingv2::types::{AvailabilityZone, TargetDescription};
     use std::{cell::RefCell, collections::VecDeque, future::ready};
 
     fn named_tag(name: &str) -> Tag {
@@ -1164,6 +1298,165 @@ mod tests {
             edge.data.source == "route_table-rtb-main"
                 && edge.data.target == "subnet-subnet-a"
                 && edge.data.label == "effective main route table"
+        }));
+    }
+
+    #[test]
+    fn load_balancers_route_to_registered_ec2_instance_targets() {
+        let alb_arn = "arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/app/web/one";
+        let nlb_arn = "arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/net/internal/two";
+        let alb_target_group_arn = "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/web/one";
+        let nlb_target_group_arn =
+            "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/internal/two";
+
+        let inventory = Inventory {
+            instances: vec![
+                Instance::builder().instance_id("i-web").build(),
+                Instance::builder().instance_id("i-internal").build(),
+            ],
+            load_balancers: vec![
+                LoadBalancer::builder()
+                    .load_balancer_arn(alb_arn)
+                    .r#type(LoadBalancerTypeEnum::Application)
+                    .build(),
+                LoadBalancer::builder()
+                    .load_balancer_arn(nlb_arn)
+                    .r#type(LoadBalancerTypeEnum::Network)
+                    .build(),
+            ],
+            target_groups: vec![
+                TargetGroup::builder()
+                    .target_group_arn(alb_target_group_arn)
+                    .load_balancer_arns(alb_arn)
+                    .target_type(TargetTypeEnum::Instance)
+                    .build(),
+                TargetGroup::builder()
+                    .target_group_arn(nlb_target_group_arn)
+                    .load_balancer_arns(nlb_arn)
+                    .target_type(TargetTypeEnum::Instance)
+                    .build(),
+            ],
+            target_health: BTreeMap::from([
+                (
+                    alb_target_group_arn.to_owned(),
+                    vec![TargetHealthDescription::builder()
+                        .target(TargetDescription::builder().id("i-web").build())
+                        .build()],
+                ),
+                (
+                    nlb_target_group_arn.to_owned(),
+                    vec![TargetHealthDescription::builder()
+                        .target(TargetDescription::builder().id("i-internal").build())
+                        .build()],
+                ),
+            ]),
+            ..Inventory::default()
+        };
+
+        let graph = build_graph(inventory);
+        assert!(graph.edges.iter().any(|edge| {
+            edge.data.source == format!("alb-{alb_arn}")
+                && edge.data.target == "ec2-i-web"
+                && edge.data.label == "routes to registered EC2 target"
+        }));
+        assert!(graph.edges.iter().any(|edge| {
+            edge.data.source == format!("nlb-{nlb_arn}")
+                && edge.data.target == "ec2-i-internal"
+                && edge.data.label == "routes to registered EC2 target"
+        }));
+    }
+
+    #[test]
+    fn unsupported_or_undiscovered_load_balancer_targets_do_not_create_edges() {
+        let alb_arn = "arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/app/web/one";
+        let ip_target_group_arn =
+            "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/ip-targets/one";
+        let lambda_target_group_arn =
+            "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/lambda-targets/two";
+        let alb_target_group_arn =
+            "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/alb-targets/three";
+        let instance_target_group_arn =
+            "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/instances/four";
+
+        let inventory = Inventory {
+            instances: vec![Instance::builder().instance_id("i-known").build()],
+            load_balancers: vec![LoadBalancer::builder()
+                .load_balancer_arn(alb_arn)
+                .r#type(LoadBalancerTypeEnum::Application)
+                .build()],
+            target_groups: vec![
+                TargetGroup::builder()
+                    .target_group_arn(ip_target_group_arn)
+                    .load_balancer_arns(alb_arn)
+                    .target_type(TargetTypeEnum::Ip)
+                    .build(),
+                TargetGroup::builder()
+                    .target_group_arn(lambda_target_group_arn)
+                    .load_balancer_arns(alb_arn)
+                    .target_type(TargetTypeEnum::Lambda)
+                    .build(),
+                TargetGroup::builder()
+                    .target_group_arn(alb_target_group_arn)
+                    .load_balancer_arns(alb_arn)
+                    .target_type(TargetTypeEnum::Alb)
+                    .build(),
+                TargetGroup::builder()
+                    .target_group_arn(instance_target_group_arn)
+                    .load_balancer_arns(alb_arn)
+                    .target_type(TargetTypeEnum::Instance)
+                    .build(),
+            ],
+            target_health: BTreeMap::from([
+                (
+                    ip_target_group_arn.to_owned(),
+                    vec![TargetHealthDescription::builder()
+                        .target(TargetDescription::builder().id("10.0.0.10").build())
+                        .build()],
+                ),
+                (
+                    lambda_target_group_arn.to_owned(),
+                    vec![TargetHealthDescription::builder()
+                        .target(
+                            TargetDescription::builder()
+                                .id("arn:aws:lambda:us-east-1:123:function:worker")
+                                .build(),
+                        )
+                        .build()],
+                ),
+                (
+                    alb_target_group_arn.to_owned(),
+                    vec![TargetHealthDescription::builder()
+                        .target(TargetDescription::builder().id(alb_arn).build())
+                        .build()],
+                ),
+                (
+                    instance_target_group_arn.to_owned(),
+                    vec![TargetHealthDescription::builder()
+                        .target(
+                            TargetDescription::builder()
+                                .id("i-not-in-inventory")
+                                .build(),
+                        )
+                        .build()],
+                ),
+            ]),
+            ..Inventory::default()
+        };
+
+        let graph = build_graph(inventory);
+        assert!(graph
+            .edges
+            .iter()
+            .all(|edge| edge.data.label != "routes to registered EC2 target"));
+        assert!(graph.edges.iter().all(|edge| {
+            graph
+                .nodes
+                .iter()
+                .any(|node| node.data.id == edge.data.source)
+                && graph
+                    .nodes
+                    .iter()
+                    .any(|node| node.data.id == edge.data.target)
         }));
     }
 }

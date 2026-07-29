@@ -46,6 +46,7 @@ import bedrockIcon from 'aws-icons/icons/architecture-service/AmazonBedrock.svg'
 import sagemakerIcon from 'aws-icons/icons/architecture-service/AmazonSageMakerAI.svg';
 import rekognitionIcon from 'aws-icons/icons/architecture-service/AmazonRekognition.svg';
 import Landing from './Landing';
+import { getLiveCanvasAutoPanDelta, getWheelZoomFactor } from './liveCanvas.mjs';
 import usePlanningDocument from './usePlanningDocument';
 import {
   convertLiveTopologyToPlan,
@@ -151,11 +152,6 @@ const MIN_PLANNING_NODE_WIDTH = 126;
 const MIN_PLANNING_NODE_HEIGHT = 68;
 const MIN_PLANNING_ZOOM = 0.6;
 const MAX_PLANNING_ZOOM = 1.55;
-
-function getWheelZoomFactor(event) {
-  const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
-  return Math.exp(-Math.max(-180, Math.min(180, delta)) * 0.0012);
-}
 
 function getPlanningNodeVisualStyle(node) {
   const widthRatio = (node.width || DEFAULT_PLANNING_NODE_WIDTH) / DEFAULT_PLANNING_NODE_WIDTH;
@@ -274,6 +270,9 @@ function Icon({ name, size = 16 }) {
     plus: <><path d="M12 5v14M5 12h14" /></>,
     download: <><path d="M12 3v12M7.5 10.5 12 15l4.5-4.5" /><path d="M5 20h14" /></>,
     upload: <><path d="M12 16V4M7.5 8.5 12 4l4.5 4.5" /><path d="M5 20h14" /></>,
+    undo: <><path d="M9 7 4 12l5 5" /><path d="M5 12h8.5a5.5 5.5 0 0 1 5.5 5.5V19" /></>,
+    redo: <><path d="m15 7 5 5-5 5" /><path d="M19 12h-8.5A5.5 5.5 0 0 0 5 17.5V19" /></>,
+    trash: <><path d="M4.5 7h15M9 7V4.5h6V7M7 7l.8 13h8.4L17 7M10 10.5v6M14 10.5v6" /></>,
     info: <><circle cx="12" cy="12" r="8.5" /><path d="M12 10.8v5.1M12 7.8h.01" /></>
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.info}</svg>;
@@ -304,7 +303,14 @@ function PlanningWorkspace({ planning }) {
     renameDocument,
     createNewArchitecture,
     importArchitecture,
-    exportArchitecture
+    exportArchitecture,
+    librarySummaries,
+    openArchitecture,
+    deleteArchitecture,
+    undo,
+    redo,
+    canUndo,
+    canRedo
   } = planning;
   const [selectedId, setSelectedId] = useState(null);
   const [connectionSource, setConnectionSource] = useState(null);
@@ -328,6 +334,18 @@ function PlanningWorkspace({ planning }) {
   const selectedNode = nodes.find((node) => node.id === selectedId);
   const selectedNodeService = selectedNode ? PLANNING_SERVICES.find((service) => service.key === selectedNode.serviceKey) : null;
   const selectedServiceDetails = selectedNode ? PLANNING_SERVICE_DETAILS[selectedNode.serviceKey] : null;
+  const selectedConnections = selectedNode
+    ? edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id)
+    : [];
+  const libraryOptions = librarySummaries.some((summary) => summary.id === planningDocument.id)
+    ? librarySummaries
+    : [{
+        id: planningDocument.id,
+        name: planningDocument.name,
+        updatedAt: planningDocument.updatedAt,
+        nodeCount: nodes.length,
+        edgeCount: edges.length
+      }, ...librarySummaries];
 
   useEffect(() => {
     setNameDraft(planningDocument.name);
@@ -589,15 +607,58 @@ function PlanningWorkspace({ planning }) {
     setNodes((current) => current.map((node) => node.id === selectedId ? { ...node, name } : node));
   };
 
+  const removeNode = useCallback((nodeId) => {
+    setNodes((current) => current.filter((node) => node.id !== nodeId));
+    setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+    setSelectedId((current) => current === nodeId ? null : current);
+    setConnectionSource((current) => current === nodeId ? null : current);
+  }, [setEdges, setNodes]);
+
+  const removeEdge = useCallback((edgeId) => {
+    setEdges((current) => current.filter((edge) => edge.id !== edgeId));
+  }, [setEdges]);
+
+  useEffect(() => {
+    const handlePlanningShortcut = (event) => {
+      const target = event.target;
+      const isEditing = target instanceof HTMLElement
+        && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+      if (isEditing) return;
+
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (modifier && event.key.toLowerCase() === 'y') {
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (!modifier && selectedId && (event.key === 'Delete' || event.key === 'Backspace')) {
+        event.preventDefault();
+        removeNode(selectedId);
+      }
+    };
+    window.addEventListener('keydown', handlePlanningShortcut);
+    return () => window.removeEventListener('keydown', handlePlanningShortcut);
+  }, [redo, removeNode, selectedId, undo]);
+
   return <>
     <div className={styles.planningToolbar}>
       <div><span className={styles.planningEyebrow}>Architecture workspace</span><h1>Design your AWS architecture</h1><p>Drag services onto the canvas, arrange them, then connect the flow.</p></div>
       <div className={styles.planningActions}>
+        <label className={styles.documentPicker}><span>Architecture</span><select value={planningDocument.id} onChange={(event) => openArchitecture(event.target.value)} aria-label="Open a saved architecture">{libraryOptions.map((summary) => <option key={summary.id} value={summary.id}>{summary.name} · {summary.nodeCount} service{summary.nodeCount === 1 ? '' : 's'}</option>)}</select></label>
         <button className={styles.secondaryBtn} type="button" onClick={createNewArchitecture}><Icon name="plus" size={15} /> New architecture</button>
         <button className={styles.secondaryBtn} type="button" onClick={() => importInputRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
         <input ref={importInputRef} className={styles.hiddenFileInput} type="file" accept=".json,.graphivo.json,application/json" onChange={handleImportFile} tabIndex={-1} />
         <button className={styles.secondaryBtn} type="button" onClick={exportArchitecture}><Icon name="download" size={15} /> Export</button>
+        <button className={styles.secondaryBtn} type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={15} /> Undo</button>
+        <button className={styles.secondaryBtn} type="button" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)"><Icon name="redo" size={15} /> Redo</button>
         <button className={`${styles.secondaryBtn} ${connectionSource ? styles.activeTool : ''}`} type="button" onClick={() => setConnectionSource((value) => value ? null : 'armed')}><Icon name="link" size={15} /> {connectionSource ? 'Cancel link' : 'Connect services'}</button>
+        <button className={styles.secondaryBtn} type="button" onClick={() => deleteArchitecture(planningDocument.id)} title="Delete this architecture"><Icon name="trash" size={14} /> Delete</button>
         <span className={styles.nodeCount}>{nodes.length} service{nodes.length === 1 ? '' : 's'} placed</span>
       </div>
     </div>
@@ -701,6 +762,11 @@ function PlanningWorkspace({ planning }) {
             <div><dt>Category</dt><dd>{selectedNodeService.category}</dd></div>
             <div><dt>Connections</dt><dd>{edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id).length}</dd></div>
           </dl>
+          {selectedConnections.length ? <div className={styles.connectionList}><span>Connected relationships</span>{selectedConnections.map((edge) => {
+            const otherNode = nodes.find((node) => node.id === (edge.source === selectedNode.id ? edge.target : edge.source));
+            return <div key={edge.id}><span>{edge.source === selectedNode.id ? 'To' : 'From'} {otherNode?.name || 'service'}{edge.label ? ` · ${edge.label}` : ''}</span><button type="button" onClick={() => removeEdge(edge.id)} aria-label={`Remove connection with ${otherNode?.name || 'service'}`} title="Remove connection"><Icon name="close" size={13} /></button></div>;
+          })}</div> : null}
+          <button className={styles.dangerBtn} type="button" onClick={() => removeNode(selectedNode.id)}><Icon name="trash" size={14} /> Remove service</button>
         </> : <div className={styles.plannerInspectorEmpty}><span><Icon name="grid" size={20} /></span><h2>Architecture details</h2><p>Select a service in the canvas to see what it does and how it is commonly used in a real AWS workload.</p></div>}
       </aside>
     </div>
@@ -725,20 +791,29 @@ export default function App() {
   const planning = usePlanningDocument(PLANNING_SERVICES);
   const cyContainerRef = useRef(null);
   const cyInstanceRef = useRef(null);
+  const liveDragAutoPanRef = useRef(null);
+
+  const stopLiveDragAutoPan = useCallback(() => {
+    const state = liveDragAutoPanRef.current;
+    if (state?.frameId != null) window.cancelAnimationFrame(state.frameId);
+    liveDragAutoPanRef.current = null;
+  }, []);
 
   useEffect(() => {
     setCanFetchTopology(Boolean(window.__TAURI__?.core?.invoke));
     return () => {
+      stopLiveDragAutoPan();
       if (cyInstanceRef.current) cyInstanceRef.current.destroy();
     };
-  }, []);
+  }, [stopLiveDragAutoPan]);
 
   const destroyGraph = useCallback(() => {
+    stopLiveDragAutoPan();
     if (cyInstanceRef.current) {
       cyInstanceRef.current.destroy();
       cyInstanceRef.current = null;
     }
-  }, []);
+  }, [stopLiveDragAutoPan]);
 
   const applyZoomedFit = useCallback(() => {
     const cy = cyInstanceRef.current;
@@ -756,32 +831,6 @@ export default function App() {
     cy.zoom({ level, renderedPosition: { x: (bounds?.width || 0) / 2, y: (bounds?.height || 0) / 2 } });
     return true;
   }, []);
-
-  const handleLiveWheel = useCallback((event) => {
-    if (!event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
-    const cy = cyInstanceRef.current;
-    if (!cy) return;
-
-    const bounds = cyContainerRef.current?.getBoundingClientRect();
-    const pointer = { x: event.clientX - (bounds?.left || 0), y: event.clientY - (bounds?.top || 0) };
-    const currentZoom = cy.zoom();
-    const level = Math.max(cy.minZoom(), Math.min(cy.maxZoom(), currentZoom * getWheelZoomFactor(event)));
-    const pan = cy.pan();
-    const modelPosition = { x: (pointer.x - pan.x) / currentZoom, y: (pointer.y - pan.y) / currentZoom };
-    const targetPan = { x: pointer.x - modelPosition.x * level, y: pointer.y - modelPosition.y * level };
-
-    cy.stop();
-    cy.animate({ zoom: level, pan: targetPan }, { duration: 120, easing: 'ease-out' });
-  }, []);
-
-  useEffect(() => {
-    if (mode !== 'live') return undefined;
-    const canvas = cyContainerRef.current;
-    if (!canvas) return undefined;
-    canvas.addEventListener('wheel', handleLiveWheel, { passive: false });
-    return () => canvas.removeEventListener('wheel', handleLiveWheel);
-  }, [handleLiveWheel, mode]);
 
   const renderGraph = useCallback(async (graph, attempt = 0) => {
     if (!cyContainerRef.current) throw new Error('Graph container not available');
@@ -809,10 +858,78 @@ export default function App() {
       layout: { name: 'breadthfirst', directed: true, animate: true, animationDuration: 450, fit: true, padding: 86, spacingFactor: 0.92, avoidOverlap: true, nodeDimensionsIncludeLabels: true },
       minZoom: 0.3,
       maxZoom: 6,
-      wheelSensitivity: 0.56,
-      userZoomingEnabled: false
+      userZoomingEnabled: true,
+      panningEnabled: true,
+      userPanningEnabled: true
     });
     cyInstanceRef.current = cy;
+    const liveCanvasElement = cyContainerRef.current;
+    const stopLiveCanvasPanning = () => liveCanvasElement?.classList.remove(styles.cyPanning);
+
+    cy.on('mousedown', (event) => {
+      if (event.target === cy) liveCanvasElement?.classList.add(styles.cyPanning);
+    });
+    cy.on('mouseup tapend', stopLiveCanvasPanning);
+    window.addEventListener('pointerup', stopLiveCanvasPanning, true);
+    cy.one('destroy', () => {
+      stopLiveCanvasPanning();
+      window.removeEventListener('pointerup', stopLiveCanvasPanning, true);
+    });
+
+    const beginLiveDragAutoPan = (event) => {
+      stopLiveDragAutoPan();
+      const state = {
+        cy,
+        pointer: event.renderedPosition || event.target.renderedPosition(),
+        frameId: null,
+        lastFrameTime: null
+      };
+      liveDragAutoPanRef.current = state;
+
+      const tick = (frameTime) => {
+        if (liveDragAutoPanRef.current !== state || cy.destroyed()) return;
+        const container = cyContainerRef.current;
+        if (!container) {
+          stopLiveDragAutoPan();
+          return;
+        }
+
+        const velocity = getLiveCanvasAutoPanDelta(state.pointer, {
+          width: container.clientWidth,
+          height: container.clientHeight
+        });
+        const elapsedSeconds = state.lastFrameTime == null
+          ? 1 / 60
+          : Math.min(0.05, Math.max(0, (frameTime - state.lastFrameTime) / 1000));
+        state.lastFrameTime = frameTime;
+        const delta = {
+          x: velocity.x * elapsedSeconds,
+          y: velocity.y * elapsedSeconds
+        };
+        if (delta.x !== 0 || delta.y !== 0) {
+          const zoom = cy.zoom();
+          const grabbedNodes = cy.nodes(':grabbed');
+          cy.panBy(delta);
+          grabbedNodes.forEach((node) => {
+            const position = node.position();
+            node.position({
+              x: position.x - delta.x / zoom,
+              y: position.y - delta.y / zoom
+            });
+          });
+        }
+        state.frameId = window.requestAnimationFrame(tick);
+      };
+
+      state.frameId = window.requestAnimationFrame(tick);
+    };
+
+    cy.on('grab', 'node', beginLiveDragAutoPan);
+    cy.on('drag', 'node', (event) => {
+      const state = liveDragAutoPanRef.current;
+      if (state?.cy === cy && event.renderedPosition) state.pointer = event.renderedPosition;
+    });
+    cy.on('free', 'node', stopLiveDragAutoPan);
     cy.on('mouseover', 'node', (event) => {
       const node = event.target;
       cy.elements('.connected-hover').removeClass('connected-hover');
@@ -841,7 +958,7 @@ export default function App() {
     cy.one('layoutstop', applyZoomedFit);
     setTimeout(applyZoomedFit, 900);
     setTimeout(applyZoomedFit, 1700);
-  }, [applyZoomedFit, destroyGraph]);
+  }, [applyZoomedFit, destroyGraph, stopLiveDragAutoPan]);
 
   useEffect(() => {
     if (mode !== 'live') {
@@ -970,7 +1087,11 @@ export default function App() {
           <div className={styles.canvasTools}><div className={styles.legend} aria-label="Resource legend">{activeLegendItems.map((type) => <span key={type}><i style={{ backgroundColor: SERVICE_MAP[type].fallbackColor }} />{SERVICE_MAP[type].heading}</span>)}</div><button className={styles.iconButton} type="button" onClick={applyZoomedFit} aria-label="Fit topology to view" title="Fit topology to view"><Icon name="fit" size={16} /></button></div>
           {!topologyStats && !loading ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="cloud" size={26} /></span><h1>Map your AWS infrastructure</h1><p>Choose a local AWS profile and region, then load the live resource relationships.</p><button className={styles.primaryBtn} type="button" onClick={() => fetchTopology(false)}><Icon name="network" size={15} /> Load topology</button></div> : null}
           {loading ? <div className={styles.loadingOverlay}><span className={styles.loadingPulse} /> Syncing resources from AWS</div> : null}
-          <div ref={cyContainerRef} className={styles.cy} />
+          <div
+            ref={cyContainerRef}
+            className={`${styles.cy} ${topologyGraph ? styles.cyInteractive : ''}`}
+            title={topologyGraph ? 'Drag empty canvas space to move around the topology' : undefined}
+          />
         </section>
         <aside className={styles.inspector} aria-label="Resource details">
           {selectedNode ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: selectedService.fallbackColor }} />{selectedService.heading}</div><button className={styles.closeButton} type="button" onClick={() => setSelectedNode(null)} aria-label="Close resource details"><Icon name="close" size={15} /></button></div><h2>{selectedNode.label || getResourceId(selectedNode.id)}</h2><dl className={styles.detailsList}><div><dt>Resource ID</dt><dd>{getResourceId(selectedNode.id)}</dd></div><div><dt>Resource type</dt><dd>{selectedService.heading}</dd></div>{Object.entries(selectedNode.details || {}).filter(([, value]) => value !== null && value !== undefined && value !== '').map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{formatDetailValue(value)}</dd></div>)}<div><dt>Region</dt><dd>{region}</dd></div><div><dt>Profile</dt><dd>{profile || 'default'}</dd></div></dl></> : <div className={styles.inspectorEmpty}><span><Icon name="info" size={20} /></span><h2>Resource details</h2><p>Select a node in the topology to inspect its identity and placement.</p></div>}
