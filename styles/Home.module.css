@@ -67,7 +67,7 @@
 .graphPanel { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background-color: #fbfcfe; background-image: radial-gradient(#dbe5f0 1px, transparent 1px); background-size: 20px 20px; }
 .graphPanel::after { position: absolute; z-index: 0; top: 0; right: 0; bottom: 0; left: 0; content: ""; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,255,255,0) 28%); }
 .canvasTools { position: absolute; z-index: 4; top: 12px; right: 12px; left: 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; pointer-events: none; }
-.legend { display: inline-flex; align-items: center; gap: 10px; padding: 7px 9px; border: 1px solid #e0e7ef; border-radius: 7px; background: rgba(255,255,255,.92); box-shadow: 0 1px 2px rgba(15,23,42,.04); color: #607086; font-size: 10px; font-weight: 600; pointer-events: auto; }
+.legend { display: inline-flex; flex-wrap: wrap; align-items: center; max-width: calc(100% - 43px); gap: 7px 10px; padding: 7px 9px; border: 1px solid #e0e7ef; border-radius: 7px; background: rgba(255,255,255,.92); box-shadow: 0 1px 2px rgba(15,23,42,.04); color: #607086; font-size: 10px; font-weight: 600; pointer-events: auto; }
 .legend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .legend i, .resourceType i { width: 7px; height: 7px; border-radius: 50%; }
 .legendVpc { background: #14b8a6; }.legendSubnet { background: #8b5cf6; }.legendEc2 { background: #f97316; }.legendRds { background: #3b82f6; }.legendSg { background: #ef476f; }

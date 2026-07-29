@@ -50,10 +50,15 @@ import usePlanningDocument from './usePlanningDocument';
 
 const SERVICE_MAP = {
   vpc: { heading: 'VPC', icon: 'aws/amazon-vpc.svg', fallbackColor: '#7b3fe4' },
-  subnet: { heading: 'Subnet', icon: 'none', fallbackColor: '#8f67d8' },
+  subnet: { heading: 'Subnet', icon: 'aws/subnet.svg', fallbackColor: '#8f67d8' },
   ec2: { heading: 'EC2 Instance', icon: 'aws/ec2.svg', fallbackColor: '#ec7211' },
   rds: { heading: 'RDS Instance', icon: 'aws/rds.svg', fallbackColor: '#3b48cc' },
-  sg: { heading: 'Security Group', icon: 'none', fallbackColor: '#64748b' }
+  sg: { heading: 'Security Group', icon: 'sg.svg', fallbackColor: '#64748b' },
+  igw: { heading: 'Internet Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#2f855a' },
+  nat: { heading: 'NAT Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#0f9f9a' },
+  route_table: { heading: 'Route Table', icon: 'aws/vpc-resource.svg', fallbackColor: '#475569' },
+  alb: { heading: 'Application Load Balancer', icon: elbIcon, fallbackColor: '#8c4fff' },
+  nlb: { heading: 'Network Load Balancer', icon: elbIcon, fallbackColor: '#5b5fc7' }
 };
 
 const PLANNING_SERVICES = [
@@ -161,8 +166,24 @@ const EDGE_TEXT_BY_RELATION = {
   'subnet->ec2': 'EC2 hosted in Subnet',
   'ec2->sg': 'Security Group attached to EC2',
   'subnet->rds': 'RDS associated with Subnet Group',
-  'rds->sg': 'Security Group attached to RDS'
+  'rds->sg': 'Security Group attached to RDS',
+  'vpc->igw': 'Internet Gateway attached to VPC',
+  'vpc->nat': 'NAT Gateway belongs to VPC',
+  'subnet->nat': 'NAT Gateway placed in Subnet',
+  'vpc->route_table': 'Route Table belongs to VPC',
+  'route_table->subnet': 'Route Table applies to Subnet',
+  'route_table->igw': 'Route sends traffic to Internet Gateway',
+  'route_table->nat': 'Route sends traffic to NAT Gateway',
+  'route_table->ec2': 'Route sends traffic to EC2 instance',
+  'vpc->alb': 'Application Load Balancer belongs to VPC',
+  'vpc->nlb': 'Network Load Balancer belongs to VPC',
+  'subnet->alb': 'Subnet serves Application Load Balancer',
+  'subnet->nlb': 'Subnet serves Network Load Balancer',
+  'alb->sg': 'Security Group attached to Application Load Balancer',
+  'nlb->sg': 'Security Group attached to Network Load Balancer'
 };
+
+const LEGACY_EDGE_LABELS = new Set(['contains', 'belongs-to', 'hosts', 'secured-by']);
 
 function getNodeTypeFromId(id) {
   if (typeof id !== 'string') return '';
@@ -184,7 +205,11 @@ function toDisplayNode(node) {
   const rawId = getResourceId(nodeData.id);
   const lines = resourceName === rawId ? [service.heading, rawId] : [resourceName, rawId];
   const longestLine = lines.reduce((max, line) => Math.max(max, line.length), 10);
-  const compact = service.icon === 'none';
+  const hasIcon = Boolean(service.icon && service.icon !== 'none');
+  const icon = hasIcon && (service.icon.startsWith('/') || service.icon.startsWith('data:'))
+    ? service.icon
+    : hasIcon ? `/assets/${service.icon}` : 'none';
+  const compact = !hasIcon;
   const nodeWidth = compact ? Math.min(205, Math.max(148, Math.round(longestLine * 5.8 + 28))) : Math.min(210, Math.max(160, Math.round(longestLine * 5.8 + 28)));
   const nodeHeight = compact ? 82 : 132;
   return {
@@ -192,7 +217,7 @@ function toDisplayNode(node) {
     data: {
       ...nodeData,
       type,
-      icon: compact ? 'none' : `/assets/${service.icon}`,
+      icon,
       fallbackColor: service.fallbackColor,
       compact: compact ? 'yes' : 'no',
       displayLabel: lines.join('\n'),
@@ -206,7 +231,17 @@ function toDisplayNode(node) {
 function toDisplayEdge(edge) {
   const edgeData = edge && typeof edge.data === 'object' ? edge.data : {};
   const relationKey = `${getNodeTypeFromId(edgeData.source)}->${getNodeTypeFromId(edgeData.target)}`;
-  return { ...edge, data: { ...edgeData, displayLabel: EDGE_TEXT_BY_RELATION[relationKey] || edgeData.label || 'AWS relationship' } };
+  const relationLabel = EDGE_TEXT_BY_RELATION[relationKey];
+  const displayLabel = LEGACY_EDGE_LABELS.has(edgeData.label)
+    ? relationLabel || edgeData.label
+    : edgeData.label || relationLabel || 'AWS relationship';
+  return { ...edge, data: { ...edgeData, displayLabel } };
+}
+
+function formatDetailValue(value) {
+  if (Array.isArray(value)) return value.join(', ');
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  return String(value);
 }
 
 function Icon({ name, size = 16 }) {
@@ -713,7 +748,7 @@ export default function App() {
         { selector: 'node[compact = "yes"]', style: { 'text-valign': 'center', 'text-margin-y': 0, 'background-color': '#f8fafc', 'border-color': '#cbd5e1' } },
         { selector: 'node.connected-node', style: { 'border-color': '#4f83cc', 'shadow-opacity': 0.27 } },
         { selector: 'node:selected', style: { 'border-color': '#2563eb', 'border-width': 2.6, 'shadow-color': '#60a5fa', 'shadow-blur': 16, 'shadow-opacity': 0.42 } },
-        { selector: 'edge', style: { width: 1.7, 'line-color': '#8ca3bd', 'target-arrow-color': '#8ca3bd', 'target-arrow-shape': 'triangle', 'arrow-scale': 1.05, 'curve-style': 'bezier', 'control-point-step-size': 36, 'overlay-opacity': 0, 'transition-property': 'line-color, target-arrow-color, width', 'transition-duration': '180ms' } },
+        { selector: 'edge', style: { width: 1.7, 'line-color': '#8ca3bd', 'target-arrow-color': '#8ca3bd', 'target-arrow-shape': 'triangle', 'arrow-scale': 1.05, 'curve-style': 'bezier', 'control-point-step-size': 36, label: 'data(displayLabel)', color: '#53657a', 'font-size': 7.5, 'font-weight': 560, 'text-rotation': 'autorotate', 'text-margin-y': -7, 'text-background-color': '#ffffff', 'text-background-opacity': 0.88, 'text-background-padding': 2, 'text-border-color': '#e2e8f0', 'text-border-width': 0.5, 'text-border-opacity': 0.8, 'overlay-opacity': 0, 'transition-property': 'line-color, target-arrow-color, width', 'transition-duration': '180ms' } },
         { selector: 'edge.connected-hover, edge:selected', style: { width: 2.8, 'line-color': '#2563eb', 'target-arrow-color': '#2563eb' } }
       ],
       layout: { name: 'breadthfirst', directed: true, animate: true, animationDuration: 450, fit: true, padding: 86, spacingFactor: 0.92, avoidOverlap: true, nodeDimensionsIncludeLabels: true },
@@ -740,7 +775,12 @@ export default function App() {
     cy.on('mouseout', 'edge', (event) => event.target.removeClass('connected-hover'));
     cy.on('tap', 'node', (event) => {
       const nodeData = event.target.data();
-      setSelectedNode({ id: nodeData.id, label: nodeData.label, type: nodeData.type || getNodeTypeFromId(nodeData.id) });
+      setSelectedNode({
+        id: nodeData.id,
+        label: nodeData.label,
+        type: nodeData.type || getNodeTypeFromId(nodeData.id),
+        details: nodeData.details && typeof nodeData.details === 'object' ? nodeData.details : {}
+      });
     });
     cy.on('tap', (event) => { if (event.target === cy) setSelectedNode(null); });
     cy.one('layoutstop', applyZoomedFit);
@@ -833,13 +873,13 @@ export default function App() {
       <div className={styles.workspaceMeta}><div><strong>Topology</strong><span>{topologyStats ? `${topologyStats.nodes} resources · ${topologyStats.edges} connections` : 'No topology loaded'}</span></div><div className={styles.status} role="status"><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</div></div>
       <div className={styles.workspace}>
         <section className={styles.graphPanel} aria-label="AWS topology graph">
-          <div className={styles.canvasTools}><div className={styles.legend} aria-label="Resource legend">{activeLegendItems.map((type) => <span key={type}><i className={styles[`legend${type.charAt(0).toUpperCase()}${type.slice(1)}`]} />{SERVICE_MAP[type].heading}</span>)}</div><button className={styles.iconButton} type="button" onClick={applyZoomedFit} aria-label="Fit topology to view" title="Fit topology to view"><Icon name="fit" size={16} /></button></div>
+          <div className={styles.canvasTools}><div className={styles.legend} aria-label="Resource legend">{activeLegendItems.map((type) => <span key={type}><i style={{ backgroundColor: SERVICE_MAP[type].fallbackColor }} />{SERVICE_MAP[type].heading}</span>)}</div><button className={styles.iconButton} type="button" onClick={applyZoomedFit} aria-label="Fit topology to view" title="Fit topology to view"><Icon name="fit" size={16} /></button></div>
           {!topologyStats && !loading ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="cloud" size={26} /></span><h1>Map your AWS infrastructure</h1><p>Choose a local AWS profile and region, then load the live resource relationships.</p><button className={styles.primaryBtn} type="button" onClick={() => fetchTopology(false)}><Icon name="network" size={15} /> Load topology</button></div> : null}
           {loading ? <div className={styles.loadingOverlay}><span className={styles.loadingPulse} /> Syncing resources from AWS</div> : null}
           <div ref={cyContainerRef} className={styles.cy} />
         </section>
         <aside className={styles.inspector} aria-label="Resource details">
-          {selectedNode ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: selectedService.fallbackColor }} />{selectedService.heading}</div><button className={styles.closeButton} type="button" onClick={() => setSelectedNode(null)} aria-label="Close resource details"><Icon name="close" size={15} /></button></div><h2>{selectedNode.label || getResourceId(selectedNode.id)}</h2><dl className={styles.detailsList}><div><dt>Resource ID</dt><dd>{getResourceId(selectedNode.id)}</dd></div><div><dt>Resource type</dt><dd>{selectedService.heading}</dd></div><div><dt>Region</dt><dd>{region}</dd></div><div><dt>Profile</dt><dd>{profile || 'default'}</dd></div></dl></> : <div className={styles.inspectorEmpty}><span><Icon name="info" size={20} /></span><h2>Resource details</h2><p>Select a node in the topology to inspect its identity and placement.</p></div>}
+          {selectedNode ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: selectedService.fallbackColor }} />{selectedService.heading}</div><button className={styles.closeButton} type="button" onClick={() => setSelectedNode(null)} aria-label="Close resource details"><Icon name="close" size={15} /></button></div><h2>{selectedNode.label || getResourceId(selectedNode.id)}</h2><dl className={styles.detailsList}><div><dt>Resource ID</dt><dd>{getResourceId(selectedNode.id)}</dd></div><div><dt>Resource type</dt><dd>{selectedService.heading}</dd></div>{Object.entries(selectedNode.details || {}).filter(([, value]) => value !== null && value !== undefined && value !== '').map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{formatDetailValue(value)}</dd></div>)}<div><dt>Region</dt><dd>{region}</dd></div><div><dt>Profile</dt><dd>{profile || 'default'}</dd></div></dl></> : <div className={styles.inspectorEmpty}><span><Icon name="info" size={20} /></span><h2>Resource details</h2><p>Select a node in the topology to inspect its identity and placement.</p></div>}
         </aside>
       </div>
       </>}

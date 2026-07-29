@@ -13,6 +13,11 @@ It uses a lightweight Vite + React frontend and a native Rust backend. The Rust 
 - EC2 instances
 - RDS instances
 - Security groups
+- Internet gateways
+- NAT gateways
+- Route tables and their effective subnet associations/routes
+- Application Load Balancers
+- Network Load Balancers
 
 Graphivo also includes a Planning mode for arranging AWS services on a manual architecture canvas without changing live infrastructure.
 
@@ -43,7 +48,7 @@ Planning data is stored only on the current device in the app webview's local st
 1. Tauri loads the Vite-built React frontend in a native desktop window.
 2. The UI calls Tauri's typed `fetch_topology` command.
 3. Rust loads the selected AWS profile and region from local AWS shared configuration.
-4. The Rust command fetches AWS resources and builds nodes and edges, including VPC-to-security-group relationships.
+4. The Rust command follows every AWS pagination token, then builds nodes and defensible network relationships only after the complete regional inventory is available.
 5. Cytoscape renders the result and the UI exposes selected-resource details.
 
 ## Development
@@ -89,6 +94,8 @@ You can choose:
 
 Then load the live topology from the app UI.
 
+Live mode is read-only. It makes regional inventory calls and does not create, update, or delete AWS resources. VPC, subnet, EC2, security-group, RDS, gateway, route-table, and ELBv2 inventory is fully paginated so large accounts are not silently truncated.
+
 ## Project Structure
 
 ```text
@@ -102,3 +109,6 @@ src-tauri/                   Tauri configuration and Rust AWS topology command
 
 - There is no Electron, Next.js, or Node.js AWS backend in the app runtime.
 - Planning mode is a local design tool; it does not edit or apply AWS infrastructure.
+- Edges are emitted only when both endpoint resources were discovered. Subnets without an explicit route-table association are connected to the VPC's main route table because that is the effective AWS routing behavior.
+- Route targets are shown for discovered internet gateways, NAT gateways, and EC2 instances. Targets outside the supported inventory (for example transit gateways, VPC endpoints, peering connections, and egress-only internet gateways) are not represented yet.
+- ELBv2 discovery currently visualizes Application and Network Load Balancers. Gateway Load Balancers are outside the supported-resource set.
