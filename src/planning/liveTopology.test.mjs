@@ -42,6 +42,26 @@ test('converts every supported live resource and preserves snapshot metadata', (
   assert.equal(ec2.height, 84);
 });
 
+test('converts the expanded live network resource set into persistable service keys', () => {
+  const graph = {
+    nodes: [
+      { data: { id: 'igw-igw-1', type: 'igw', label: 'internet' } },
+      { data: { id: 'nat-nat-1', type: 'nat', label: 'private-egress' } },
+      { data: { id: 'route_table-rtb-1', type: 'route_table', label: 'public-routes' } },
+      { data: { id: 'alb-alb-1', type: 'alb', label: 'web-alb' } },
+      { data: { id: 'nlb-nlb-1', type: 'nlb', label: 'tcp-nlb' } }
+    ],
+    edges: []
+  };
+
+  const plan = convertLiveTopologyToPlan(graph, context);
+  assert.deepEqual(
+    new Set(plan.nodes.map((node) => node.serviceKey)),
+    new Set(['igw', 'nat', 'route_table', 'alb', 'nlb'])
+  );
+  assert.equal(plan.nodes.every((node) => !('service' in node)), true);
+});
+
 test('layout is deterministic, graph-ranked, bounded, and non-overlapping for an ordinary graph', () => {
   const first = convertLiveTopologyToPlan(liveGraph, context);
   const reordered = convertLiveTopologyToPlan({

@@ -32,7 +32,7 @@ Open **Planning mode** from the top navigation. Planning documents support:
 
 Creating a new architecture or importing over a non-empty one asks for confirmation first. Export any plan you want to keep as a separate file; Graphivo currently restores the most recently saved planning document rather than maintaining a document library. Imported files are validated against the AWS service catalog, and an invalid or incompatible file is left unopened with an explanation in the UI.
 
-Planning data is stored only on the current device in the app webview's local storage under `graphivo.planning.last-document`. JSON files use the versioned `graphivo/planning-document` schema. Version 1 includes the document id and name, timestamps, nodes (`serviceKey`, custom name, position, and size), edges, and canvas viewport. If saved local data is corrupt or incompatible, Graphivo opens a safe blank document and leaves the user free to import a valid export.
+Planning data is stored only on the current device in the app webview's local storage under `graphivo.planning.last-document`. JSON files use the versioned `graphivo/planning-document` schema. Version 1 includes the document id and name, timestamps, nodes (`serviceKey`, custom name, position, size, and optional live-resource provenance), edges, and canvas viewport. If saved local data is corrupt or incompatible, Graphivo opens a safe blank document and leaves the user free to import a valid export.
 
 ## Stack
 
@@ -55,7 +55,7 @@ Planning data is stored only on the current device in the app webview's local st
 
 1. In **Live mode**, choose an AWS profile and region and load the topology.
 2. After the load succeeds, select **Open in planning**.
-3. Graphivo creates a deterministic, editable layout containing the supported VPC, subnet, EC2, RDS, and security-group resources and their directed relationships.
+3. Graphivo creates a deterministic, editable layout containing the discovered VPC, subnet, EC2, RDS, security-group, gateway, route-table, and ALB/NLB resources and their directed relationships.
 4. Select an imported node to inspect its original resource label, resource ID, live type, profile, region, and import provenance. Its planning display name, size, and position can be changed without changing the saved live snapshot.
 5. Add services from the planning library or create additional connections to explore the desired “to-be” architecture.
 

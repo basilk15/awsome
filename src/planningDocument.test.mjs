@@ -42,6 +42,35 @@ test('serializes and deserializes a complete versioned planning document', () =>
   assert.deepEqual(restored.viewport, { zoom: 1.2, pan: { x: -120, y: -80 } });
 });
 
+test('preserves live-import provenance and relationship metadata across saves', () => {
+  const imported = exampleDocument();
+  imported.nodes[0] = {
+    ...imported.nodes[0],
+    provenance: 'imported-from-live',
+    originalResourceLabel: 'production-web',
+    resourceId: 'i-0123456789',
+    liveResourceType: 'ec2',
+    liveNodeId: 'ec2-i-0123456789',
+    profile: 'production',
+    region: 'eu-west-1'
+  };
+  imported.edges[0] = {
+    ...imported.edges[0],
+    label: 'hosts',
+    provenance: 'imported-from-live',
+    sourceEdgeId: 'edge-subnet-ec2',
+    profile: 'production',
+    region: 'eu-west-1'
+  };
+
+  const restored = deserializePlanningDocument(serializePlanningDocument(imported, catalog), catalog);
+  assert.equal(restored.nodes[0].liveNodeId, 'ec2-i-0123456789');
+  assert.equal(restored.nodes[0].originalResourceLabel, 'production-web');
+  assert.equal(restored.nodes[0].profile, 'production');
+  assert.equal(restored.edges[0].sourceEdgeId, 'edge-subnet-ec2');
+  assert.equal(restored.edges[0].provenance, 'imported-from-live');
+});
+
 test('migrates legacy version 0 canvas fields and embedded service objects', () => {
   const legacy = {
     version: 0,
