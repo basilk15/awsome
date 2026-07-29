@@ -47,6 +47,13 @@ import sagemakerIcon from 'aws-icons/icons/architecture-service/AmazonSageMakerA
 import rekognitionIcon from 'aws-icons/icons/architecture-service/AmazonRekognition.svg';
 import Landing from './Landing';
 import usePlanningDocument from './usePlanningDocument';
+import {
+  convertLiveTopologyToPlan,
+  DEFAULT_NODE_HEIGHT as DEFAULT_PLANNING_NODE_HEIGHT,
+  DEFAULT_NODE_WIDTH as DEFAULT_PLANNING_NODE_WIDTH,
+  mergePlanningGraphs,
+  PLANNING_CANVAS_SIZE
+} from './planning/liveTopology.mjs';
 
 const SERVICE_MAP = {
   vpc: { heading: 'VPC', icon: 'aws/amazon-vpc.svg', fallbackColor: '#7b3fe4' },
@@ -65,8 +72,8 @@ const PLANNING_SERVICES = [
   ['Compute', 'Amazon EC2', 'ec2', '#ec7211'], ['Compute', 'AWS Lambda', 'lambda', '#ff9900'], ['Compute', 'Amazon ECS', 'ecs', '#d86613'], ['Compute', 'Amazon EKS', 'eks', '#326ce5'], ['Compute', 'AWS Fargate', 'fargate', '#ec7211'], ['Compute', 'Elastic Beanstalk', 'beanstalk', '#3f8624'], ['Compute', 'AWS Batch', 'batch', '#ec7211'],
   ['Storage', 'Amazon S3', 's3', '#569a31'], ['Storage', 'Amazon EBS', 'ebs', '#e7157b'], ['Storage', 'Amazon EFS', 'efs', '#8c4fff'], ['Storage', 'Amazon FSx', 'fsx', '#df3312'], ['Storage', 'Storage Gateway', 'gateway', '#569a31'],
   ['Database', 'Amazon RDS', 'rds', '#3b48cc'], ['Database', 'Amazon Aurora', 'aurora', '#3b48cc'], ['Database', 'Amazon DynamoDB', 'dynamodb', '#4053d6'], ['Database', 'Amazon ElastiCache', 'elasticache', '#c925d1'], ['Database', 'Amazon Redshift', 'redshift', '#8b3eb8'], ['Database', 'Amazon Neptune', 'neptune', '#00a1c9'],
-  ['Networking', 'Amazon VPC', 'vpc', '#7b3fe4'], ['Networking', 'Elastic Load Balancing', 'elb', '#8c4fff'], ['Networking', 'Amazon CloudFront', 'cloudfront', '#8c4fff'], ['Networking', 'Amazon Route 53', 'route53', '#8c4fff'], ['Networking', 'Amazon API Gateway', 'api', '#8c4fff'], ['Networking', 'AWS Transit Gateway', 'transit', '#8c4fff'],
-  ['Security', 'AWS IAM', 'iam', '#dd344c'], ['Security', 'AWS KMS', 'kms', '#dd344c'], ['Security', 'AWS WAF', 'waf', '#dd344c'], ['Security', 'AWS Secrets Manager', 'secrets', '#dd344c'], ['Security', 'Amazon Cognito', 'cognito', '#dd344c'],
+  ['Networking', 'Amazon VPC', 'vpc', '#7b3fe4'], ['Networking', 'VPC Subnet', 'subnet', '#8f67d8'], ['Networking', 'Internet Gateway', 'igw', '#2f855a'], ['Networking', 'NAT Gateway', 'nat', '#0f9f9a'], ['Networking', 'Route Table', 'route_table', '#475569'], ['Networking', 'Application Load Balancer', 'alb', '#8c4fff'], ['Networking', 'Network Load Balancer', 'nlb', '#5b5fc7'], ['Networking', 'Elastic Load Balancing', 'elb', '#8c4fff'], ['Networking', 'Amazon CloudFront', 'cloudfront', '#8c4fff'], ['Networking', 'Amazon Route 53', 'route53', '#8c4fff'], ['Networking', 'Amazon API Gateway', 'api', '#8c4fff'], ['Networking', 'AWS Transit Gateway', 'transit', '#8c4fff'],
+  ['Security', 'Security Group', 'sg', '#64748b'], ['Security', 'AWS IAM', 'iam', '#dd344c'], ['Security', 'AWS KMS', 'kms', '#dd344c'], ['Security', 'AWS WAF', 'waf', '#dd344c'], ['Security', 'AWS Secrets Manager', 'secrets', '#dd344c'], ['Security', 'Amazon Cognito', 'cognito', '#dd344c'],
   ['Integration', 'Amazon SQS', 'sqs', '#e7157b'], ['Integration', 'Amazon SNS', 'sns', '#e7157b'], ['Integration', 'Amazon EventBridge', 'eventbridge', '#e7157b'], ['Integration', 'AWS Step Functions', 'stepfunctions', '#e7157b'],
   ['Analytics', 'Amazon Athena', 'athena', '#2ca6ad'], ['Analytics', 'AWS Glue', 'glue', '#2ca6ad'], ['Analytics', 'Amazon Kinesis', 'kinesis', '#2ca6ad'], ['Analytics', 'Amazon OpenSearch', 'opensearch', '#2ca6ad'], ['Analytics', 'Amazon QuickSight', 'quicksight', '#2ca6ad'],
   ['Management', 'Amazon CloudWatch', 'cloudwatch', '#e7157b'], ['Management', 'AWS CloudFormation', 'cloudformation', '#e7157b'], ['Management', 'AWS CloudTrail', 'cloudtrail', '#e7157b'], ['Management', 'AWS Systems Manager', 'ssm', '#e7157b'],
@@ -77,8 +84,8 @@ const PLANNING_ICON_PATHS = {
   ec2: ec2Icon, lambda: lambdaIcon, ecs: ecsIcon, eks: eksIcon, fargate: fargateIcon, beanstalk: beanstalkIcon, batch: batchIcon,
   s3: s3Icon, ebs: ebsIcon, efs: efsIcon, fsx: fsxIcon, gateway: gatewayIcon,
   rds: rdsIcon, aurora: auroraIcon, dynamodb: dynamodbIcon, elasticache: elasticacheIcon, redshift: redshiftIcon, neptune: neptuneIcon,
-  vpc: vpcIcon, elb: elbIcon, cloudfront: cloudfrontIcon, route53: route53Icon, api: apiIcon, transit: transitIcon,
-  iam: iamIcon, kms: kmsIcon, waf: wafIcon, secrets: secretsIcon, cognito: cognitoIcon,
+  vpc: vpcIcon, subnet: '/assets/aws/subnet.svg', igw: vpcIcon, nat: vpcIcon, route_table: vpcIcon, alb: elbIcon, nlb: elbIcon, elb: elbIcon, cloudfront: cloudfrontIcon, route53: route53Icon, api: apiIcon, transit: transitIcon,
+  sg: '/assets/sg.svg', iam: iamIcon, kms: kmsIcon, waf: wafIcon, secrets: secretsIcon, cognito: cognitoIcon,
   sqs: sqsIcon, sns: snsIcon, eventbridge: eventbridgeIcon, stepfunctions: stepfunctionsIcon,
   athena: athenaIcon, glue: glueIcon, kinesis: kinesisIcon, opensearch: opensearchIcon, quicksight: quicksightIcon,
   cloudwatch: cloudwatchIcon, cloudformation: cloudformationIcon, cloudtrail: cloudtrailIcon, ssm: ssmIcon,
@@ -105,12 +112,19 @@ const PLANNING_SERVICE_DETAILS = {
   redshift: ['Managed cloud data warehouse.', 'Analyze large business datasets with SQL and BI tools.'],
   neptune: ['Managed graph database service.', 'Model relationships for fraud detection, recommendations, and knowledge graphs.'],
   vpc: ['Isolated virtual network for AWS resources.', 'Define subnets, routing, security boundaries, and private connectivity.'],
+  subnet: ['A segmented IP range inside an Amazon VPC.', 'Place workloads in public or private network zones and availability zones.'],
+  igw: ['A gateway that connects a VPC to the public internet.', 'Provide internet routing for resources in public subnets.'],
+  nat: ['A managed gateway for outbound internet access from private subnets.', 'Let private workloads reach external services without accepting inbound internet traffic.'],
+  route_table: ['A collection of routing rules applied to VPC subnets.', 'Direct network traffic toward gateways, appliances, and other destinations.'],
+  alb: ['Layer 7 load balancing for HTTP and HTTPS applications.', 'Route application requests across healthy services using host and path rules.'],
+  nlb: ['High-performance Layer 4 load balancing for TCP, UDP, and TLS.', 'Distribute low-latency network traffic across healthy targets.'],
   elb: ['Managed load balancers for distributing application traffic.', 'Route requests across healthy instances, containers, or IP targets.'],
   cloudfront: ['Global content delivery network.', 'Accelerate websites, APIs, video, and downloads at edge locations.'],
   route53: ['Scalable DNS and traffic routing service.', 'Manage domains, health checks, and failover or latency-based routing.'],
   api: ['Managed service for publishing and securing APIs.', 'Expose REST, HTTP, and WebSocket APIs to clients and partners.'],
   transit: ['Central hub for VPC and on-premises network connectivity.', 'Connect many VPCs and hybrid networks through a shared routing layer.'],
   iam: ['Identity and access management for AWS resources.', 'Control who can sign in and what people or workloads can do.'],
+  sg: ['Stateful virtual firewall for AWS resources.', 'Control allowed inbound and outbound traffic for workloads and databases.'],
   kms: ['Managed service for creating and controlling encryption keys.', 'Encrypt application data, secrets, disks, databases, and S3 objects.'],
   waf: ['Web application firewall for HTTP(S) traffic.', 'Block malicious requests and protect public websites and APIs.'],
   secrets: ['Managed storage and rotation for sensitive values.', 'Keep database credentials, API keys, and tokens out of code.'],
@@ -133,13 +147,10 @@ const PLANNING_SERVICE_DETAILS = {
   rekognition: ['AI service for image and video analysis.', 'Detect labels, text, faces, and unsafe content in media workflows.']
 };
 
-const DEFAULT_PLANNING_NODE_WIDTH = 168;
-const DEFAULT_PLANNING_NODE_HEIGHT = 84;
 const MIN_PLANNING_NODE_WIDTH = 126;
 const MIN_PLANNING_NODE_HEIGHT = 68;
 const MIN_PLANNING_ZOOM = 0.6;
 const MAX_PLANNING_ZOOM = 1.55;
-const PLANNING_CANVAS_SIZE = 3000;
 
 function getWheelZoomFactor(event) {
   const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
@@ -275,7 +286,7 @@ function PlanningServiceIcon({ service, small = false }) {
   </span>;
 }
 
-function PlanningWorkspace() {
+function PlanningWorkspace({ planning }) {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [search, setSearch] = useState('');
   const {
@@ -294,7 +305,7 @@ function PlanningWorkspace() {
     createNewArchitecture,
     importArchitecture,
     exportArchitecture
-  } = usePlanningDocument(PLANNING_SERVICES);
+  } = planning;
   const [selectedId, setSelectedId] = useState(null);
   const [connectionSource, setConnectionSource] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
@@ -574,6 +585,10 @@ function PlanningWorkspace() {
     setPaletteWidth((current) => Math.max(190, Math.min(420, current + (event.key === 'ArrowRight' ? step : -step))));
   };
 
+  const renameSelectedNode = (name) => {
+    setNodes((current) => current.map((node) => node.id === selectedId ? { ...node, name } : node));
+  };
+
   return <>
     <div className={styles.planningToolbar}>
       <div><span className={styles.planningEyebrow}>Architecture workspace</span><h1>Design your AWS architecture</h1><p>Drag services onto the canvas, arrange them, then connect the flow.</p></div>
@@ -616,7 +631,33 @@ function PlanningWorkspace() {
         <div className={`${styles.planningCanvas} ${isCanvasPanning ? styles.planningCanvasPanning : ''}`} ref={canvasRef} onPointerDown={beginCanvasPan} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop} onPointerMove={(event) => { moveCanvasPan(event); moveNode(event); }} onPointerUp={(event) => { endCanvasPan(); endNodeInteraction(event); }} onPointerCancel={(event) => { endCanvasPan(); endNodeInteraction(event); }} onClick={handleCanvasClick}>
           <div className={styles.planningCanvasSurface} style={{ '--canvas-zoom': canvasZoom, '--canvas-pan-x': `${canvasPan.x}px`, '--canvas-pan-y': `${canvasPan.y}px` }}>
           <div className={styles.canvasGrid} />
-          {edges.length ? <svg className={styles.connectionLayer} aria-hidden="true">{edges.map((edge) => { const source = nodes.find((node) => node.id === edge.source); const target = nodes.find((node) => node.id === edge.target); return source && target ? <line key={edge.id} x1={source.x + (source.width || DEFAULT_PLANNING_NODE_WIDTH) / 2} y1={source.y + (source.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2} x2={target.x + (target.width || DEFAULT_PLANNING_NODE_WIDTH) / 2} y2={target.y + (target.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2} /> : null; })}</svg> : null}
+          {edges.length ? <svg className={styles.connectionLayer} aria-hidden="true">
+            <defs><marker id="planning-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
+            {edges.map((edge) => {
+              const source = nodes.find((node) => node.id === edge.source);
+              const target = nodes.find((node) => node.id === edge.target);
+              if (!source || !target) return null;
+              const sourceCenter = { x: source.x + (source.width || DEFAULT_PLANNING_NODE_WIDTH) / 2, y: source.y + (source.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 };
+              const targetCenter = { x: target.x + (target.width || DEFAULT_PLANNING_NODE_WIDTH) / 2, y: target.y + (target.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 };
+              const delta = { x: targetCenter.x - sourceCenter.x, y: targetCenter.y - sourceCenter.y };
+              const sourceScale = Math.min(
+                (source.width || DEFAULT_PLANNING_NODE_WIDTH) / 2 / Math.max(1, Math.abs(delta.x)),
+                (source.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 / Math.max(1, Math.abs(delta.y))
+              );
+              const targetScale = Math.min(
+                (target.width || DEFAULT_PLANNING_NODE_WIDTH) / 2 / Math.max(1, Math.abs(delta.x)),
+                (target.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 / Math.max(1, Math.abs(delta.y))
+              );
+              const x1 = sourceCenter.x + (delta.x * sourceScale);
+              const y1 = sourceCenter.y + (delta.y * sourceScale);
+              const x2 = targetCenter.x - (delta.x * targetScale);
+              const y2 = targetCenter.y - (delta.y * targetScale);
+              return <g key={edge.id}>
+                <line x1={x1} y1={y1} x2={x2} y2={y2} />
+                {edge.label ? <text x={(sourceCenter.x + targetCenter.x) / 2} y={(sourceCenter.y + targetCenter.y) / 2 - 7}>{edge.label}</text> : null}
+              </g>;
+            })}
+          </svg> : null}
           {!nodes.length ? <div className={styles.planningEmpty}><span><Icon name="cursor" size={27} /></span><h2>Start with a service</h2><p>Choose an AWS service from the library and drag it here to start mapping your system.</p></div> : null}
           {nodes.map((node) => <div
             key={node.id}
@@ -649,7 +690,18 @@ function PlanningWorkspace() {
         </div>
       </section>
       <aside className={styles.planningInspector} aria-label="Architecture details">
-        {selectedNode && selectedNodeService ? <><span className={styles.panelKicker}>AWS service details</span><PlanningServiceIcon service={selectedNodeService} /><h2>{selectedNode.name}</h2><p>{selectedServiceDetails?.[0] || 'AWS managed service selected for this architecture.'}</p><div className={styles.realWorldUse}><span>Common use</span><p>{selectedServiceDetails?.[1] || 'Use this service as part of your planned AWS workload.'}</p></div><dl><div><dt>Category</dt><dd>{selectedNodeService.category}</dd></div><div><dt>Connections</dt><dd>{edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id).length}</dd></div></dl></> : <div className={styles.plannerInspectorEmpty}><span><Icon name="grid" size={20} /></span><h2>Architecture details</h2><p>Select a service in the canvas to see what it does and how it is commonly used in a real AWS workload.</p></div>}
+        {selectedNode && selectedNodeService ? <>
+          <span className={styles.panelKicker}>{selectedNode.provenance ? 'Imported AWS resource' : 'AWS service details'}</span>
+          <PlanningServiceIcon service={selectedNodeService} />
+          <label className={styles.nodeNameField}><span>Display name</span><input value={selectedNode.name} onChange={(event) => renameSelectedNode(event.target.value)} aria-label="Planning node display name" /></label>
+          <p>{selectedServiceDetails?.[0] || 'AWS managed service selected for this architecture.'}</p>
+          <div className={styles.realWorldUse}><span>Common use</span><p>{selectedServiceDetails?.[1] || 'Use this service as part of your planned AWS workload.'}</p></div>
+          <dl>
+            {selectedNode.provenance ? <><div><dt>Provenance</dt><dd>Imported from live topology</dd></div><div><dt>Original label</dt><dd>{selectedNode.originalResourceLabel}</dd></div><div><dt>Resource ID</dt><dd>{selectedNode.resourceId}</dd></div><div><dt>Live resource type</dt><dd>{selectedNode.liveResourceType}</dd></div><div><dt>Profile</dt><dd>{selectedNode.profile}</dd></div><div><dt>Region</dt><dd>{selectedNode.region}</dd></div></> : null}
+            <div><dt>Category</dt><dd>{selectedNodeService.category}</dd></div>
+            <div><dt>Connections</dt><dd>{edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id).length}</dd></div>
+          </dl>
+        </> : <div className={styles.plannerInspectorEmpty}><span><Icon name="grid" size={20} /></span><h2>Architecture details</h2><p>Select a service in the canvas to see what it does and how it is commonly used in a real AWS workload.</p></div>}
       </aside>
     </div>
   </>;
@@ -665,9 +717,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [topologyStats, setTopologyStats] = useState(null);
   const [topologyGraph, setTopologyGraph] = useState(null);
+  const [topologyContext, setTopologyContext] = useState(null);
   const [resourceCounts, setResourceCounts] = useState({});
   const [selectedNode, setSelectedNode] = useState(null);
+  const [pendingPlanImport, setPendingPlanImport] = useState(null);
   const [canFetchTopology, setCanFetchTopology] = useState(false);
+  const planning = usePlanningDocument(PLANNING_SERVICES);
   const cyContainerRef = useRef(null);
   const cyInstanceRef = useRef(null);
 
@@ -828,6 +883,10 @@ export default function App() {
       const graph = await invoke('fetch_topology', { profile, region });
       await renderGraph(graph);
       setTopologyGraph(graph);
+      setTopologyContext({
+        profile: profile.trim() || 'default',
+        region: region.trim() || 'me-south-1'
+      });
       const nodes = Array.isArray(graph?.nodes) ? graph.nodes.length : 0;
       const edges = Array.isArray(graph?.edges) ? graph.edges.length : 0;
       const counts = (Array.isArray(graph?.nodes) ? graph.nodes : []).reduce((result, node) => {
@@ -847,6 +906,40 @@ export default function App() {
     }
   }, [profile, region, renderGraph]);
 
+  const openTopologyInPlanning = useCallback(() => {
+    if (!topologyGraph || !topologyContext) return;
+    const importedPlan = convertLiveTopologyToPlan(topologyGraph, topologyContext);
+    if (planning.nodes.length || planning.edges.length) {
+      setPendingPlanImport(importedPlan);
+      return;
+    }
+    planning.setNodes(importedPlan.nodes);
+    planning.setEdges(importedPlan.edges);
+    planning.setCanvasZoom(1);
+    planning.setCanvasPan({ x: 0, y: 0 });
+    setMode('planning');
+  }, [planning, topologyContext, topologyGraph]);
+
+  const finishPlanImport = useCallback((choice) => {
+    if (!pendingPlanImport) return;
+    if (choice === 'replace') {
+      planning.setNodes(pendingPlanImport.nodes);
+      planning.setEdges(pendingPlanImport.edges);
+      planning.setCanvasZoom(1);
+      planning.setCanvasPan({ x: 0, y: 0 });
+    }
+    if (choice === 'append') {
+      const merged = mergePlanningGraphs(
+        { nodes: planning.nodes, edges: planning.edges },
+        pendingPlanImport
+      );
+      planning.setNodes(merged.nodes);
+      planning.setEdges(merged.edges);
+    }
+    setPendingPlanImport(null);
+    if (choice !== 'cancel') setMode('planning');
+  }, [pendingPlanImport, planning]);
+
   const selectedService = selectedNode ? SERVICE_MAP[selectedNode.type] || { heading: 'AWS Resource', fallbackColor: '#6b8fca' } : null;
   const activeLegendItems = Object.keys(SERVICE_MAP).filter((type) => resourceCounts[type] > 0);
 
@@ -859,12 +952,13 @@ export default function App() {
         <nav className={styles.modeSwitch} aria-label="Workspace mode"><button type="button" className={mode === 'live' ? styles.modeActive : ''} onClick={() => setMode('live')}><i />Live mode</button><button type="button" className={mode === 'planning' ? styles.modeActive : ''} onClick={() => setMode('planning')}><Icon name="grid" size={14} />Planning mode</button></nav>
         <div className={styles.topbarMeta}><span className={`${styles.connectionState} ${canFetchTopology ? styles.connectionReady : styles.connectionOffline}`}><i /> {canFetchTopology ? 'Native backend ready' : 'Tauri backend unavailable'}</span></div>
       </header>
-      {mode === 'planning' ? <PlanningWorkspace /> : <>
+      {mode === 'planning' ? <PlanningWorkspace planning={planning} /> : <>
       <div className={styles.toolbarCard}>
         <div className={styles.sourceLabel}><Icon name="database" size={15} /><span>Data source</span></div>
         <div className={styles.fieldGroup}><label htmlFor="aws-profile">AWS profile</label><input id="aws-profile" value={profile} onChange={(event) => setProfile(event.target.value)} disabled={loading} autoComplete="off" /></div>
         <div className={styles.fieldGroup}><label htmlFor="aws-region">Region</label><input id="aws-region" value={region} onChange={(event) => setRegion(event.target.value)} disabled={loading} autoComplete="off" /></div>
         <div className={styles.actionsGroup}>
+          <button className={styles.secondaryBtn} disabled={loading || !topologyGraph} onClick={openTopologyInPlanning}><Icon name="grid" size={15} /> Open in planning</button>
           <button className={styles.secondaryBtn} disabled={loading || !topologyStats} onClick={() => fetchTopology(true)}><Icon name="refresh" size={15} /> Refresh</button>
           <button className={styles.primaryBtn} disabled={loading} onClick={() => fetchTopology(false)}>{loading ? <><span className={styles.buttonSpinner} /> Loading</> : <><Icon name="network" size={15} /> Load topology</>}</button>
         </div>
@@ -883,6 +977,19 @@ export default function App() {
         </aside>
       </div>
       </>}
+      {pendingPlanImport ? <div className={styles.dialogBackdrop} role="presentation">
+        <section className={styles.importDialog} role="dialog" aria-modal="true" aria-labelledby="import-plan-title">
+          <span className={styles.dialogIcon}><Icon name="layers" size={20} /></span>
+          <h2 id="import-plan-title">Planning canvas already has work</h2>
+          <p>Choose how to use this live snapshot. Append keeps existing work and skips resources already imported; replace starts a new plan from the snapshot.</p>
+          <div className={styles.importSummary}><span>{pendingPlanImport.nodes.length} resources</span><span>{pendingPlanImport.edges.length} relationships</span></div>
+          <div className={styles.dialogActions}>
+            <button className={styles.secondaryBtn} type="button" onClick={() => finishPlanImport('cancel')}>Cancel</button>
+            <button className={styles.secondaryBtn} type="button" onClick={() => finishPlanImport('append')}>Append without duplicates</button>
+            <button className={styles.primaryBtn} type="button" onClick={() => finishPlanImport('replace')}>Replace planning canvas</button>
+          </div>
+        </section>
+      </div> : null}
     </section>
   </main>;
 }

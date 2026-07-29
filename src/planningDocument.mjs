@@ -42,6 +42,11 @@ function requiredString(value, fieldName, maxLength = 240) {
   return value.trim();
 }
 
+function optionalString(value, maxLength = 240) {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  return value.trim().slice(0, maxLength);
+}
+
 function finiteNumber(value, fieldName) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new PlanningDocumentError(`"${fieldName}" must be a finite number.`);
@@ -163,6 +168,14 @@ export function normalizePlanningDocument(input, serviceCatalog, options = {}) {
     const x = clamp(finiteNumber(node.x, `nodes[${index}].x`), 0, Math.max(0, CANVAS_SIZE - width));
     const y = clamp(finiteNumber(node.y, `nodes[${index}].y`), 0, Math.max(0, CANVAS_SIZE - height));
 
+    const provenance = optionalString(node.provenance, 80);
+    const originalResourceLabel = optionalString(node.originalResourceLabel, 240);
+    const resourceId = optionalString(node.resourceId, 240);
+    const liveResourceType = optionalString(node.liveResourceType, 80);
+    const liveNodeId = optionalString(node.liveNodeId, 320);
+    const profile = optionalString(node.profile, 160);
+    const region = optionalString(node.region, 80);
+
     return {
       id,
       serviceKey,
@@ -170,7 +183,14 @@ export function normalizePlanningDocument(input, serviceCatalog, options = {}) {
       x,
       y,
       width,
-      height
+      height,
+      ...(provenance ? { provenance } : {}),
+      ...(originalResourceLabel ? { originalResourceLabel } : {}),
+      ...(resourceId ? { resourceId } : {}),
+      ...(liveResourceType ? { liveResourceType } : {}),
+      ...(liveNodeId ? { liveNodeId } : {}),
+      ...(profile ? { profile } : {}),
+      ...(region ? { region } : {})
     };
   });
 
@@ -188,11 +208,20 @@ export function normalizePlanningDocument(input, serviceCatalog, options = {}) {
     }
     if (source === target) throw new PlanningDocumentError(`Edge "${id}" cannot connect a node to itself.`);
     edgeIds.add(id);
+    const provenance = optionalString(edge.provenance, 80);
+    const sourceEdgeId = optionalString(edge.sourceEdgeId, 320);
+    const profile = optionalString(edge.profile, 160);
+    const region = optionalString(edge.region, 80);
+
     return {
       id,
       source,
       target,
-      ...(typeof edge.label === 'string' && edge.label.trim() ? { label: edge.label.trim().slice(0, 240) } : {})
+      ...(typeof edge.label === 'string' && edge.label.trim() ? { label: edge.label.trim().slice(0, 240) } : {}),
+      ...(provenance ? { provenance } : {}),
+      ...(sourceEdgeId ? { sourceEdgeId } : {}),
+      ...(profile ? { profile } : {}),
+      ...(region ? { region } : {})
     };
   });
 

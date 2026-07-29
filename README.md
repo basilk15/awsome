@@ -2,7 +2,7 @@
   <img src="./docs/assets/awsome-logo-transparent.png" alt="awsome logo" width="400" />
 </p>
 
-`Graphivo` is a Tauri desktop app for visualizing AWS infrastructure as an interactive topology graph.
+`Graphivo` is a Tauri desktop app for visualizing AWS infrastructure as an interactive topology graph and turning a live snapshot into an editable architecture plan.
 
 It uses a lightweight Vite + React frontend and a native Rust backend. The Rust backend reads the selected local AWS profile, fetches live resources with the AWS SDK for Rust, transforms them into graph data, and returns it to the Cytoscape UI through a Tauri command.
 
@@ -50,6 +50,16 @@ Planning data is stored only on the current device in the app webview's local st
 3. Rust loads the selected AWS profile and region from local AWS shared configuration.
 4. The Rust command follows every AWS pagination token, then builds nodes and defensible network relationships only after the complete regional inventory is available.
 5. Cytoscape renders the result and the UI exposes selected-resource details.
+
+## Live topology to architecture plan
+
+1. In **Live mode**, choose an AWS profile and region and load the topology.
+2. After the load succeeds, select **Open in planning**.
+3. Graphivo creates a deterministic, editable layout containing the supported VPC, subnet, EC2, RDS, and security-group resources and their directed relationships.
+4. Select an imported node to inspect its original resource label, resource ID, live type, profile, region, and import provenance. Its planning display name, size, and position can be changed without changing the saved live snapshot.
+5. Add services from the planning library or create additional connections to explore the desired “to-be” architecture.
+
+If the planning canvas already contains work, Graphivo asks whether to append the snapshot, replace the canvas, or cancel. Append preserves existing planning work and skips resources and relationships that were already imported, so importing the same snapshot again does not create duplicates.
 
 ## Development
 
@@ -108,7 +118,8 @@ src-tauri/                   Tauri configuration and Rust AWS topology command
 ## Notes
 
 - There is no Electron, Next.js, or Node.js AWS backend in the app runtime.
-- Planning mode is a local design tool; it does not edit or apply AWS infrastructure.
+- Planning changes are local architecture-design edits; Graphivo does not apply them to AWS.
+- Returning to Live mode restores the loaded topology independently of planning changes.
 - Edges are emitted only when both endpoint resources were discovered. Subnets without an explicit route-table association are connected to the VPC's main route table because that is the effective AWS routing behavior.
 - Route targets are shown for discovered internet gateways, NAT gateways, and EC2 instances. Targets outside the supported inventory (for example transit gateways, VPC endpoints, peering connections, and egress-only internet gateways) are not represented yet.
 - ELBv2 discovery currently visualizes Application and Network Load Balancers. Gateway Load Balancers are outside the supported-resource set.

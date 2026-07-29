@@ -6,9 +6,9 @@
     "start": "tauri dev",
     "dev": "tauri dev",
     "dev:web": "vite",
+    "test": "node --test",
     "build:web": "vite build",
     "preview:web": "vite preview",
-    "test": "node src/planningDocument.test.mjs",
     "build": "tauri build",
     "tauri": "tauri"
   },

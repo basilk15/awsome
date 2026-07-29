@@ -169,7 +169,9 @@
 .planningCanvasPanning .planningCanvasSurface { transition: none; }
 .canvasGrid { position: absolute; z-index: -1; inset: 0; pointer-events: none; background-image: radial-gradient(#d8e3ef 1px, transparent 1px); background-size: 20px 20px; }
 .connectionLayer { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; pointer-events: none; }
-.connectionLayer line { stroke: #5f91d4; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 4; marker-end: none; }
+.connectionLayer line { stroke: #5f91d4; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 5 4; marker-end: url("#planning-arrow"); }
+.connectionLayer marker path { fill: #5f91d4; }
+.connectionLayer text { fill: #527092; paint-order: stroke; stroke: #fcfdff; stroke-width: 5px; stroke-linejoin: round; font-size: 10px; font-weight: 650; text-anchor: middle; }
 .planningEmpty { position: absolute; top: 50%; left: 50%; width: min(310px, 70%); transform: translate(-50%, -54%); color: #718096; text-align: center; }
 .planningEmpty > span { display: inline-grid; width: 49px; height: 49px; place-items: center; color: #3e6ea9; border: 1px solid #d8e8fb; border-radius: 12px; background: #eef6ff; }
 .planningEmpty h2 { margin: 12px 0 5px; color: #334155; font-size: 15px; letter-spacing: -.025em; }
@@ -193,6 +195,10 @@
 .planningInspector > .serviceIcon img { width: 36px; height: 36px; }
 .planningInspector h2 { margin: 11px 0 8px; color: #25364b; font-size: 16px; line-height: 1.28; letter-spacing: -.025em; }
 .planningInspector p { margin: 0 0 17px; color: #718096; font-size: 11px; line-height: 1.6; }
+.nodeNameField { display: grid; gap: 5px; margin: 11px 0 10px; }
+.nodeNameField span { color: #8695a8; font-size: 9px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+.nodeNameField input { width: 100%; height: 34px; padding: 0 9px; color: #25364b; border: 1px solid #cbd6e2; border-radius: 7px; background: #fff; font: inherit; font-size: 12px; font-weight: 650; }
+.nodeNameField input:focus { outline: 0; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.12); }
 .realWorldUse { margin: 0 0 16px; padding: 10px; border: 1px solid #dcebf9; border-radius: 8px; background: linear-gradient(135deg, #f8fbff, #f0f7ff); }
 .realWorldUse > span { display: block; margin-bottom: 4px; color: #4a719d; font-size: 9px; font-weight: 760; letter-spacing: .06em; text-transform: uppercase; }
 .realWorldUse p { margin: 0; color: #466078; font-size: 11px; line-height: 1.52; }
@@ -204,6 +210,15 @@
 .plannerInspectorEmpty > span { display: grid; width: 33px; height: 33px; place-items: center; color: #527092; border-radius: 8px; background: #f0f5fa; }
 .plannerInspectorEmpty h2 { margin: 12px 0 6px; font-size: 14px; }
 .plannerInspectorEmpty p { margin-bottom: 0; }
+
+.dialogBackdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 22px; background: rgba(15,23,42,.46); backdrop-filter: blur(3px); }
+.importDialog { width: min(490px, 100%); padding: 22px; border: 1px solid #d5e0eb; border-radius: 13px; background: #fff; box-shadow: 0 22px 60px rgba(15,23,42,.25); }
+.dialogIcon { display: grid; width: 40px; height: 40px; place-items: center; color: #1d4ed8; border-radius: 10px; background: #eff6ff; }
+.importDialog h2 { margin: 14px 0 7px; color: #1e293b; font-size: 18px; letter-spacing: -.025em; }
+.importDialog > p { margin: 0; color: #64748b; font-size: 12px; line-height: 1.6; }
+.importSummary { display: flex; gap: 8px; margin: 16px 0 20px; }
+.importSummary span { padding: 5px 8px; color: #315d91; border: 1px solid #d7e7f8; border-radius: 6px; background: #f5f9fe; font-size: 10px; font-weight: 700; }
+.dialogActions { display: flex; justify-content: flex-end; gap: 8px; }
 
 @media (max-width: 880px) {
   .toolbarCard { flex-wrap: wrap; }
@@ -236,4 +251,5 @@
   .planningLayout { grid-template-columns: 1fr; grid-template-rows: 250px minmax(340px, 1fr); overflow: auto; }
   .servicePalette { min-height: 250px; }
   .paletteResizeHandle { display: none; }
+  .dialogActions { align-items: stretch; flex-direction: column-reverse; }
 }
