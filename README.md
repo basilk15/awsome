@@ -32,6 +32,8 @@ Open **Planning mode** from the top navigation. Planning documents support:
 - A local architecture library for switching between multiple saved designs
 - Undo/redo controls and keyboard shortcuts for recovering autosaved edits
 - Direct removal of services and individual connections
+- Editable labels on each connection, carried into saved JSON and diagram exports
+- Shareable, self-contained SVG diagram exports in addition to the editable JSON export
 - **New architecture**, **Import**, **Export**, and confirmed **Delete** controls
 
 Imported files are validated against the AWS service catalog, and an invalid or incompatible file is left unopened with an explanation in the UI. Importing a document whose id already exists asks before replacing that saved architecture. Deleting an architecture also requires confirmation.
@@ -109,6 +111,8 @@ You can choose:
 Then load the live topology from the app UI.
 
 Live mode is read-only. It makes regional inventory calls and does not create, update, or delete AWS resources. VPC, subnet, EC2, security-group, RDS, gateway, route-table, and ELBv2 inventory is fully paginated so large accounts are not silently truncated.
+
+For large inventories, use **Find resource** to search resource names, IDs, types, and returned details. The resource chips above the graph can also narrow the visible topology by service type; the result count makes the active subset clear.
 
 Inside the live topology canvas, use the mouse wheel to zoom around the pointer, drag the background to pan, and drag a resource toward any canvas edge to automatically reveal more workspace in that direction. The fit button restores the complete topology to view.
 

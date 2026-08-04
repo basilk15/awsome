@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from '../styles/Home.module.css';
 import ec2Icon from 'aws-icons/icons/architecture-service/AmazonEC2.svg';
 import lambdaIcon from 'aws-icons/icons/architecture-service/AWSLambda.svg';
@@ -47,6 +47,15 @@ import sagemakerIcon from 'aws-icons/icons/architecture-service/AmazonSageMakerA
 import rekognitionIcon from 'aws-icons/icons/architecture-service/AmazonRekognition.svg';
 import Landing from './Landing';
 import { getLiveCanvasAutoPanDelta, getWheelZoomFactor } from './liveCanvas.mjs';
+import { filterLiveTopologyGraph } from './liveTopologyFilter.mjs';
+import {
+  MAX_PLANNING_CONNECTION_LABEL_LENGTH,
+  updatePlanningConnectionLabel
+} from './planning/connectionLabels.mjs';
+import {
+  createPlanningSvgArtifact,
+  downloadPlanningSvgArtifact
+} from './planning/canvasExport.mjs';
 import usePlanningDocument from './usePlanningDocument';
 import {
   convertLiveTopologyToPlan,
@@ -285,6 +294,32 @@ function PlanningServiceIcon({ service, small = false }) {
   </span>;
 }
 
+function PlanningConnectionLabelField({ edge, otherNodeName, onCommit }) {
+  const [draft, setDraft] = useState(edge.label || '');
+
+  useEffect(() => {
+    setDraft(edge.label || '');
+  }, [edge.id, edge.label]);
+
+  const commit = () => {
+    const normalized = draft.trim();
+    setDraft(normalized);
+    onCommit(edge.id, normalized);
+  };
+
+  return <label className={styles.connectionLabelField}>
+    <span>Connection label</span>
+    <input
+      value={draft}
+      maxLength={MAX_PLANNING_CONNECTION_LABEL_LENGTH}
+      placeholder="e.g. sends HTTPS traffic"
+      aria-label={`Connection label with ${otherNodeName || 'service'}`}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onBlur={commit}
+    />
+  </label>;
+}
+
 function PlanningWorkspace({ planning }) {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [search, setSearch] = useState('');
@@ -355,6 +390,11 @@ function PlanningWorkspace({ planning }) {
 
   const commitDocumentName = () => {
     if (!renameDocument(nameDraft)) setNameDraft(planningDocument.name);
+  };
+
+  const exportArchitectureSvg = () => {
+    const artifact = createPlanningSvgArtifact(planningDocument, PLANNING_SERVICES);
+    downloadPlanningSvgArtifact(artifact);
   };
 
   const handleImportFile = async (event) => {
@@ -618,6 +658,10 @@ function PlanningWorkspace({ planning }) {
     setEdges((current) => current.filter((edge) => edge.id !== edgeId));
   }, [setEdges]);
 
+  const updateConnectionLabel = useCallback((edgeId, label) => {
+    setEdges((current) => updatePlanningConnectionLabel(current, edgeId, label));
+  }, [setEdges]);
+
   useEffect(() => {
     const handlePlanningShortcut = (event) => {
       const target = event.target;
@@ -655,6 +699,7 @@ function PlanningWorkspace({ planning }) {
         <button className={styles.secondaryBtn} type="button" onClick={() => importInputRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
         <input ref={importInputRef} className={styles.hiddenFileInput} type="file" accept=".json,.graphivo.json,application/json" onChange={handleImportFile} tabIndex={-1} />
         <button className={styles.secondaryBtn} type="button" onClick={exportArchitecture}><Icon name="download" size={15} /> Export</button>
+        <button className={styles.secondaryBtn} type="button" onClick={exportArchitectureSvg}><Icon name="download" size={15} /> Export SVG</button>
         <button className={styles.secondaryBtn} type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={15} /> Undo</button>
         <button className={styles.secondaryBtn} type="button" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)"><Icon name="redo" size={15} /> Redo</button>
         <button className={`${styles.secondaryBtn} ${connectionSource ? styles.activeTool : ''}`} type="button" onClick={() => setConnectionSource((value) => value ? null : 'armed')}><Icon name="link" size={15} /> {connectionSource ? 'Cancel link' : 'Connect services'}</button>
@@ -764,7 +809,7 @@ function PlanningWorkspace({ planning }) {
           </dl>
           {selectedConnections.length ? <div className={styles.connectionList}><span>Connected relationships</span>{selectedConnections.map((edge) => {
             const otherNode = nodes.find((node) => node.id === (edge.source === selectedNode.id ? edge.target : edge.source));
-            return <div key={edge.id}><span>{edge.source === selectedNode.id ? 'To' : 'From'} {otherNode?.name || 'service'}{edge.label ? ` · ${edge.label}` : ''}</span><button type="button" onClick={() => removeEdge(edge.id)} aria-label={`Remove connection with ${otherNode?.name || 'service'}`} title="Remove connection"><Icon name="close" size={13} /></button></div>;
+            return <div key={edge.id} className={styles.connectionItem}><div><span>{edge.source === selectedNode.id ? 'To' : 'From'} {otherNode?.name || 'service'}</span><button type="button" onClick={() => removeEdge(edge.id)} aria-label={`Remove connection with ${otherNode?.name || 'service'}`} title="Remove connection"><Icon name="close" size={13} /></button></div><PlanningConnectionLabelField edge={edge} otherNodeName={otherNode?.name} onCommit={updateConnectionLabel} /></div>;
           })}</div> : null}
           <button className={styles.dangerBtn} type="button" onClick={() => removeNode(selectedNode.id)}><Icon name="trash" size={14} /> Remove service</button>
         </> : <div className={styles.plannerInspectorEmpty}><span><Icon name="grid" size={20} /></span><h2>Architecture details</h2><p>Select a service in the canvas to see what it does and how it is commonly used in a real AWS workload.</p></div>}
@@ -785,6 +830,8 @@ export default function App() {
   const [topologyGraph, setTopologyGraph] = useState(null);
   const [topologyContext, setTopologyContext] = useState(null);
   const [resourceCounts, setResourceCounts] = useState({});
+  const [liveSearch, setLiveSearch] = useState('');
+  const [selectedLiveTypes, setSelectedLiveTypes] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
   const [pendingPlanImport, setPendingPlanImport] = useState(null);
   const [canFetchTopology, setCanFetchTopology] = useState(false);
@@ -960,15 +1007,27 @@ export default function App() {
     setTimeout(applyZoomedFit, 1700);
   }, [applyZoomedFit, destroyGraph, stopLiveDragAutoPan]);
 
+  const filteredTopologyGraph = useMemo(
+    () => filterLiveTopologyGraph(topologyGraph, { query: liveSearch, selectedTypes: selectedLiveTypes }),
+    [liveSearch, selectedLiveTypes, topologyGraph]
+  );
+  const hasLiveFilters = Boolean(liveSearch.trim() || selectedLiveTypes.length);
+
   useEffect(() => {
     if (mode !== 'live') {
       destroyGraph();
       return undefined;
     }
     if (!topologyGraph) return undefined;
-    const renderTimer = window.setTimeout(() => { renderGraph(topologyGraph).catch(() => {}); }, 0);
+    const renderTimer = window.setTimeout(() => { renderGraph(filteredTopologyGraph).catch(() => {}); }, 0);
     return () => window.clearTimeout(renderTimer);
-  }, [destroyGraph, mode, renderGraph, topologyGraph]);
+  }, [destroyGraph, filteredTopologyGraph, mode, renderGraph, topologyGraph]);
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    const visible = filteredTopologyGraph.nodes.some((node) => node?.data?.id === selectedNode.id);
+    if (!visible) setSelectedNode(null);
+  }, [filteredTopologyGraph, selectedNode]);
 
   useEffect(() => {
     const handleShortcut = (event) => {
@@ -1059,6 +1118,18 @@ export default function App() {
 
   const selectedService = selectedNode ? SERVICE_MAP[selectedNode.type] || { heading: 'AWS Resource', fallbackColor: '#6b8fca' } : null;
   const activeLegendItems = Object.keys(SERVICE_MAP).filter((type) => resourceCounts[type] > 0);
+  const visibleTopologyStats = topologyStats
+    ? { nodes: filteredTopologyGraph.nodes.length, edges: filteredTopologyGraph.edges.length }
+    : null;
+  const toggleLiveResourceType = (type) => {
+    setSelectedLiveTypes((current) => current.includes(type)
+      ? current.filter((selected) => selected !== type)
+      : [...current, type]);
+  };
+  const clearLiveFilters = () => {
+    setLiveSearch('');
+    setSelectedLiveTypes([]);
+  };
 
   if (showLanding) return <Landing onComplete={() => setShowLanding(false)} />;
 
@@ -1074,6 +1145,7 @@ export default function App() {
         <div className={styles.sourceLabel}><Icon name="database" size={15} /><span>Data source</span></div>
         <div className={styles.fieldGroup}><label htmlFor="aws-profile">AWS profile</label><input id="aws-profile" value={profile} onChange={(event) => setProfile(event.target.value)} disabled={loading} autoComplete="off" /></div>
         <div className={styles.fieldGroup}><label htmlFor="aws-region">Region</label><input id="aws-region" value={region} onChange={(event) => setRegion(event.target.value)} disabled={loading} autoComplete="off" /></div>
+        <label className={styles.liveSearchBox}><Icon name="search" size={15} /><span>Find resource</span><input value={liveSearch} onChange={(event) => setLiveSearch(event.target.value)} disabled={loading || !topologyGraph} placeholder="Name, ID, detail…" aria-label="Search live topology resources" /></label>
         <div className={styles.actionsGroup}>
           <button className={styles.secondaryBtn} disabled={loading || !topologyGraph} onClick={openTopologyInPlanning}><Icon name="grid" size={15} /> Open in planning</button>
           <button className={styles.secondaryBtn} disabled={loading || !topologyStats} onClick={() => fetchTopology(true)}><Icon name="refresh" size={15} /> Refresh</button>
@@ -1081,11 +1153,12 @@ export default function App() {
         </div>
       </div>
       {error ? <div className={styles.errorBanner} role="alert"><Icon name="info" size={17} /><div><strong>Could not load topology</strong><p>{error.replace('Failed to load topology: ', '')}</p></div></div> : null}
-      <div className={styles.workspaceMeta}><div><strong>Topology</strong><span>{topologyStats ? `${topologyStats.nodes} resources · ${topologyStats.edges} connections` : 'No topology loaded'}</span></div><div className={styles.status} role="status"><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</div></div>
+      <div className={styles.workspaceMeta}><div><strong>Topology</strong><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connections` : 'No topology loaded'}</span></div><div className={styles.status} role="status"><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</div></div>
       <div className={styles.workspace}>
         <section className={styles.graphPanel} aria-label="AWS topology graph">
-          <div className={styles.canvasTools}><div className={styles.legend} aria-label="Resource legend">{activeLegendItems.map((type) => <span key={type}><i style={{ backgroundColor: SERVICE_MAP[type].fallbackColor }} />{SERVICE_MAP[type].heading}</span>)}</div><button className={styles.iconButton} type="button" onClick={applyZoomedFit} aria-label="Fit topology to view" title="Fit topology to view"><Icon name="fit" size={16} /></button></div>
+          <div className={styles.canvasTools}><div className={styles.legend} aria-label="Filter topology by resource type">{activeLegendItems.map((type) => <button key={type} type="button" className={selectedLiveTypes.length && !selectedLiveTypes.includes(type) ? styles.legendFilterInactive : ''} aria-pressed={!selectedLiveTypes.length || selectedLiveTypes.includes(type)} onClick={() => toggleLiveResourceType(type)} title={`Show only ${SERVICE_MAP[type].heading} resources`}><i style={{ backgroundColor: SERVICE_MAP[type].fallbackColor }} />{SERVICE_MAP[type].heading}</button>)}</div><button className={styles.iconButton} type="button" onClick={applyZoomedFit} aria-label="Fit topology to view" title="Fit topology to view"><Icon name="fit" size={16} /></button></div>
           {!topologyStats && !loading ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="cloud" size={26} /></span><h1>Map your AWS infrastructure</h1><p>Choose a local AWS profile and region, then load the live resource relationships.</p><button className={styles.primaryBtn} type="button" onClick={() => fetchTopology(false)}><Icon name="network" size={15} /> Load topology</button></div> : null}
+          {topologyStats && !loading && !filteredTopologyGraph.nodes.length ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="search" size={26} /></span><h1>No matching resources</h1><p>Adjust the search or resource-type filters to see more of this topology.</p><button className={styles.secondaryBtn} type="button" onClick={clearLiveFilters}>Clear filters</button></div> : null}
           {loading ? <div className={styles.loadingOverlay}><span className={styles.loadingPulse} /> Syncing resources from AWS</div> : null}
           <div
             ref={cyContainerRef}
