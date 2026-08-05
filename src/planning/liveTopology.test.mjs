@@ -62,6 +62,32 @@ test('converts the expanded live network resource set into persistable service k
   assert.equal(plan.nodes.every((node) => !('service' in node)), true);
 });
 
+test('imports load-balancer target groups and every registered target type', () => {
+  const graph = {
+    nodes: [
+      { data: { id: 'target_group-web', type: 'target_group', label: 'web-targets' } },
+      { data: { id: 'target_ec2-web-i-1', type: 'target_ec2', label: 'i-1' } },
+      { data: { id: 'target_ip-web-10.0.0.10', type: 'target_ip', label: '10.0.0.10' } },
+      { data: { id: 'target_lambda-web-worker', type: 'target_lambda', label: 'worker' } },
+      { data: { id: 'target_alb-web-internal', type: 'target_alb', label: 'internal-alb' } }
+    ],
+    edges: [
+      { data: { id: 'lb-group', source: 'target_group-web', target: 'target_ec2-web-i-1', label: 'registered EC2 target (HTTP; 8080; healthy)' } },
+      { data: { id: 'group-ip', source: 'target_group-web', target: 'target_ip-web-10.0.0.10', label: 'registered IP target (HTTP; 8080; unhealthy; Target.Timeout)' } },
+      { data: { id: 'group-lambda', source: 'target_group-web', target: 'target_lambda-web-worker', label: 'registered Lambda target' } },
+      { data: { id: 'group-alb', source: 'target_group-web', target: 'target_alb-web-internal', label: 'registered Application Load Balancer target (HTTP; 443; healthy)' } }
+    ]
+  };
+
+  const plan = convertLiveTopologyToPlan(graph, context);
+  assert.deepEqual(
+    new Set(plan.nodes.map((node) => node.serviceKey)),
+    new Set(['target_group', 'target_ec2', 'target_ip', 'target_lambda', 'target_alb'])
+  );
+  assert.equal(plan.edges.length, 4);
+  assert.equal(plan.edges.find((edge) => edge.sourceEdgeId === 'group-ip').label, 'registered IP target (HTTP; 8080; unhealthy; Target.Timeout)');
+});
+
 test('layout is deterministic, graph-ranked, bounded, and non-overlapping for an ordinary graph', () => {
   const first = convertLiveTopologyToPlan(liveGraph, context);
   const reordered = convertLiveTopologyToPlan({

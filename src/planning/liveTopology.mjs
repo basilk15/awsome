@@ -12,8 +12,19 @@ export const LIVE_SERVICE_DEFINITIONS = {
   igw: { category: 'Networking', name: 'Internet Gateway', key: 'igw', color: '#2f855a' },
   nat: { category: 'Networking', name: 'NAT Gateway', key: 'nat', color: '#0f9f9a' },
   route_table: { category: 'Networking', name: 'Route Table', key: 'route_table', color: '#475569' },
+  vpc_endpoint: { category: 'Networking', name: 'VPC Endpoint', key: 'vpc_endpoint', color: '#2563eb' },
+  vpc_peering: { category: 'Networking', name: 'VPC Peering Connection', key: 'vpc_peering', color: '#0284c7' },
+  egress_only_igw: { category: 'Networking', name: 'Egress-only Internet Gateway', key: 'egress_only_igw', color: '#0f766e' },
+  transit_gateway: { category: 'Networking', name: 'Transit Gateway', key: 'transit', color: '#7c3aed' },
+  transit_gateway_attachment: { category: 'Networking', name: 'Transit Gateway Attachment', key: 'transit_gateway_attachment', color: '#a855f7' },
+  transit_gateway_route_table: { category: 'Networking', name: 'Transit Gateway Route Table', key: 'transit_gateway_route_table', color: '#6d28d9' },
   alb: { category: 'Networking', name: 'Application Load Balancer', key: 'alb', color: '#8c4fff' },
-  nlb: { category: 'Networking', name: 'Network Load Balancer', key: 'nlb', color: '#5b5fc7' }
+  nlb: { category: 'Networking', name: 'Network Load Balancer', key: 'nlb', color: '#5b5fc7' },
+  target_group: { category: 'Networking', name: 'Load Balancer Target Group', key: 'target_group', color: '#7c3aed' },
+  target_ec2: { category: 'Compute', name: 'Registered EC2 Target', key: 'target_ec2', color: '#ec7211' },
+  target_ip: { category: 'Networking', name: 'Registered IP Target', key: 'target_ip', color: '#0f766e' },
+  target_lambda: { category: 'Compute', name: 'Registered Lambda Target', key: 'target_lambda', color: '#ff9900' },
+  target_alb: { category: 'Networking', name: 'Registered ALB Target', key: 'target_alb', color: '#8c4fff' }
 };
 
 function cleanString(value) {

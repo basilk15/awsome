@@ -74,15 +74,27 @@ const SERVICE_MAP = {
   igw: { heading: 'Internet Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#2f855a' },
   nat: { heading: 'NAT Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#0f9f9a' },
   route_table: { heading: 'Route Table', icon: 'aws/vpc-resource.svg', fallbackColor: '#475569' },
+  vpc_endpoint: { heading: 'VPC Endpoint', icon: 'aws/vpc-resource.svg', fallbackColor: '#2563eb' },
+  vpc_peering: { heading: 'VPC Peering Connection', icon: 'aws/vpc-resource.svg', fallbackColor: '#0284c7' },
+  egress_only_igw: { heading: 'Egress-only Internet Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#0f766e' },
+  transit_gateway: { heading: 'Transit Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#7c3aed' },
+  transit_gateway_attachment: { heading: 'Transit Gateway Attachment', icon: 'aws/vpc-resource.svg', fallbackColor: '#a855f7' },
+  transit_gateway_route_table: { heading: 'Transit Gateway Route Table', icon: 'aws/vpc-resource.svg', fallbackColor: '#6d28d9' },
   alb: { heading: 'Application Load Balancer', icon: elbIcon, fallbackColor: '#8c4fff' },
-  nlb: { heading: 'Network Load Balancer', icon: elbIcon, fallbackColor: '#5b5fc7' }
+  nlb: { heading: 'Network Load Balancer', icon: elbIcon, fallbackColor: '#5b5fc7' },
+  target_group: { heading: 'Load Balancer Target Group', icon: elbIcon, fallbackColor: '#7c3aed' },
+  target_ec2: { heading: 'Registered EC2 Target', icon: 'aws/ec2.svg', fallbackColor: '#ec7211' },
+  target_ip: { heading: 'Registered IP Target', icon: 'aws/vpc-resource.svg', fallbackColor: '#0f766e' },
+  target_lambda: { heading: 'Registered Lambda Target', icon: lambdaIcon, fallbackColor: '#ff9900' },
+  target_alb: { heading: 'Registered ALB Target', icon: elbIcon, fallbackColor: '#8c4fff' }
 };
 
 const PLANNING_SERVICES = [
   ['Compute', 'Amazon EC2', 'ec2', '#ec7211'], ['Compute', 'AWS Lambda', 'lambda', '#ff9900'], ['Compute', 'Amazon ECS', 'ecs', '#d86613'], ['Compute', 'Amazon EKS', 'eks', '#326ce5'], ['Compute', 'AWS Fargate', 'fargate', '#ec7211'], ['Compute', 'Elastic Beanstalk', 'beanstalk', '#3f8624'], ['Compute', 'AWS Batch', 'batch', '#ec7211'],
   ['Storage', 'Amazon S3', 's3', '#569a31'], ['Storage', 'Amazon EBS', 'ebs', '#e7157b'], ['Storage', 'Amazon EFS', 'efs', '#8c4fff'], ['Storage', 'Amazon FSx', 'fsx', '#df3312'], ['Storage', 'Storage Gateway', 'gateway', '#569a31'],
   ['Database', 'Amazon RDS', 'rds', '#3b48cc'], ['Database', 'Amazon Aurora', 'aurora', '#3b48cc'], ['Database', 'Amazon DynamoDB', 'dynamodb', '#4053d6'], ['Database', 'Amazon ElastiCache', 'elasticache', '#c925d1'], ['Database', 'Amazon Redshift', 'redshift', '#8b3eb8'], ['Database', 'Amazon Neptune', 'neptune', '#00a1c9'],
-  ['Networking', 'Amazon VPC', 'vpc', '#7b3fe4'], ['Networking', 'VPC Subnet', 'subnet', '#8f67d8'], ['Networking', 'Internet Gateway', 'igw', '#2f855a'], ['Networking', 'NAT Gateway', 'nat', '#0f9f9a'], ['Networking', 'Route Table', 'route_table', '#475569'], ['Networking', 'Application Load Balancer', 'alb', '#8c4fff'], ['Networking', 'Network Load Balancer', 'nlb', '#5b5fc7'], ['Networking', 'Elastic Load Balancing', 'elb', '#8c4fff'], ['Networking', 'Amazon CloudFront', 'cloudfront', '#8c4fff'], ['Networking', 'Amazon Route 53', 'route53', '#8c4fff'], ['Networking', 'Amazon API Gateway', 'api', '#8c4fff'], ['Networking', 'AWS Transit Gateway', 'transit', '#8c4fff'],
+  ['Networking', 'Amazon VPC', 'vpc', '#7b3fe4'], ['Networking', 'VPC Subnet', 'subnet', '#8f67d8'], ['Networking', 'Internet Gateway', 'igw', '#2f855a'], ['Networking', 'NAT Gateway', 'nat', '#0f9f9a'], ['Networking', 'Route Table', 'route_table', '#475569'], ['Networking', 'VPC Endpoint', 'vpc_endpoint', '#2563eb'], ['Networking', 'VPC Peering Connection', 'vpc_peering', '#0284c7'], ['Networking', 'Egress-only Internet Gateway', 'egress_only_igw', '#0f766e'], ['Networking', 'Transit Gateway Attachment', 'transit_gateway_attachment', '#a855f7'], ['Networking', 'Transit Gateway Route Table', 'transit_gateway_route_table', '#6d28d9'], ['Networking', 'Application Load Balancer', 'alb', '#8c4fff'], ['Networking', 'Network Load Balancer', 'nlb', '#5b5fc7'], ['Networking', 'Load Balancer Target Group', 'target_group', '#7c3aed'], ['Networking', 'Registered IP Target', 'target_ip', '#0f766e'], ['Networking', 'Registered ALB Target', 'target_alb', '#8c4fff'], ['Networking', 'Elastic Load Balancing', 'elb', '#8c4fff'], ['Networking', 'Amazon CloudFront', 'cloudfront', '#8c4fff'], ['Networking', 'Amazon Route 53', 'route53', '#8c4fff'], ['Networking', 'Amazon API Gateway', 'api', '#8c4fff'], ['Networking', 'AWS Transit Gateway', 'transit', '#8c4fff'],
+  ['Compute', 'Registered EC2 Target', 'target_ec2', '#ec7211'], ['Compute', 'Registered Lambda Target', 'target_lambda', '#ff9900'],
   ['Security', 'Security Group', 'sg', '#64748b'], ['Security', 'AWS IAM', 'iam', '#dd344c'], ['Security', 'AWS KMS', 'kms', '#dd344c'], ['Security', 'AWS WAF', 'waf', '#dd344c'], ['Security', 'AWS Secrets Manager', 'secrets', '#dd344c'], ['Security', 'Amazon Cognito', 'cognito', '#dd344c'],
   ['Integration', 'Amazon SQS', 'sqs', '#e7157b'], ['Integration', 'Amazon SNS', 'sns', '#e7157b'], ['Integration', 'Amazon EventBridge', 'eventbridge', '#e7157b'], ['Integration', 'AWS Step Functions', 'stepfunctions', '#e7157b'],
   ['Analytics', 'Amazon Athena', 'athena', '#2ca6ad'], ['Analytics', 'AWS Glue', 'glue', '#2ca6ad'], ['Analytics', 'Amazon Kinesis', 'kinesis', '#2ca6ad'], ['Analytics', 'Amazon OpenSearch', 'opensearch', '#2ca6ad'], ['Analytics', 'Amazon QuickSight', 'quicksight', '#2ca6ad'],
@@ -94,7 +106,7 @@ const PLANNING_ICON_PATHS = {
   ec2: ec2Icon, lambda: lambdaIcon, ecs: ecsIcon, eks: eksIcon, fargate: fargateIcon, beanstalk: beanstalkIcon, batch: batchIcon,
   s3: s3Icon, ebs: ebsIcon, efs: efsIcon, fsx: fsxIcon, gateway: gatewayIcon,
   rds: rdsIcon, aurora: auroraIcon, dynamodb: dynamodbIcon, elasticache: elasticacheIcon, redshift: redshiftIcon, neptune: neptuneIcon,
-  vpc: vpcIcon, subnet: '/assets/aws/subnet.svg', igw: vpcIcon, nat: vpcIcon, route_table: vpcIcon, alb: elbIcon, nlb: elbIcon, elb: elbIcon, cloudfront: cloudfrontIcon, route53: route53Icon, api: apiIcon, transit: transitIcon,
+  vpc: vpcIcon, subnet: '/assets/aws/subnet.svg', igw: vpcIcon, nat: vpcIcon, route_table: vpcIcon, vpc_endpoint: vpcIcon, vpc_peering: vpcIcon, egress_only_igw: vpcIcon, transit_gateway: transitIcon, transit_gateway_attachment: transitIcon, transit_gateway_route_table: transitIcon, alb: elbIcon, nlb: elbIcon, target_group: elbIcon, target_ec2: ec2Icon, target_ip: vpcIcon, target_lambda: lambdaIcon, target_alb: elbIcon, elb: elbIcon, cloudfront: cloudfrontIcon, route53: route53Icon, api: apiIcon, transit: transitIcon,
   sg: '/assets/sg.svg', iam: iamIcon, kms: kmsIcon, waf: wafIcon, secrets: secretsIcon, cognito: cognitoIcon,
   sqs: sqsIcon, sns: snsIcon, eventbridge: eventbridgeIcon, stepfunctions: stepfunctionsIcon,
   athena: athenaIcon, glue: glueIcon, kinesis: kinesisIcon, opensearch: opensearchIcon, quicksight: quicksightIcon,
@@ -126,8 +138,19 @@ const PLANNING_SERVICE_DETAILS = {
   igw: ['A gateway that connects a VPC to the public internet.', 'Provide internet routing for resources in public subnets.'],
   nat: ['A managed gateway for outbound internet access from private subnets.', 'Let private workloads reach external services without accepting inbound internet traffic.'],
   route_table: ['A collection of routing rules applied to VPC subnets.', 'Direct network traffic toward gateways, appliances, and other destinations.'],
+  vpc_endpoint: ['Private connectivity from a VPC to supported AWS and endpoint services.', 'Keep service traffic on the AWS network instead of traversing the public internet.'],
+  vpc_peering: ['A private network connection between two VPCs.', 'Exchange routes between the requester and accepter VPCs.'],
+  egress_only_igw: ['IPv6-only outbound internet connectivity for a VPC.', 'Allow outbound IPv6 traffic without permitting unsolicited inbound connections.'],
+  transit_gateway: ['A regional network hub that connects VPCs and hybrid networks.', 'Centralize routing across many attached networks.'],
+  transit_gateway_attachment: ['The connection from a transit gateway to a VPC or other network.', 'Carries traffic between the transit gateway and its attached resource.'],
+  transit_gateway_route_table: ['Routing rules for a transit gateway.', 'Choose the attachment that receives traffic for each destination.'],
   alb: ['Layer 7 load balancing for HTTP and HTTPS applications.', 'Route application requests across healthy services using host and path rules.'],
   nlb: ['High-performance Layer 4 load balancing for TCP, UDP, and TLS.', 'Distribute low-latency network traffic across healthy targets.'],
+  target_group: ['A set of registered targets behind an Elastic Load Balancer.', 'Apply a routing and health-check policy to a workload.'],
+  target_ec2: ['An EC2 instance registered with a load-balancer target group.', 'Receive traffic on the configured target port.'],
+  target_ip: ['An IP address registered with a load-balancer target group.', 'Route traffic to private IP workloads such as containers or on-premises targets.'],
+  target_lambda: ['A Lambda function registered with an Application Load Balancer target group.', 'Invoke serverless code from HTTP(S) requests.'],
+  target_alb: ['An Application Load Balancer registered with an NLB target group.', 'Chain a Network Load Balancer to an Application Load Balancer.'],
   elb: ['Managed load balancers for distributing application traffic.', 'Route requests across healthy instances, containers, or IP targets.'],
   cloudfront: ['Global content delivery network.', 'Accelerate websites, APIs, video, and downloads at edge locations.'],
   route53: ['Scalable DNS and traffic routing service.', 'Manage domains, health checks, and failover or latency-based routing.'],
@@ -191,12 +214,31 @@ const EDGE_TEXT_BY_RELATION = {
   'route_table->igw': 'Route sends traffic to Internet Gateway',
   'route_table->nat': 'Route sends traffic to NAT Gateway',
   'route_table->ec2': 'Route sends traffic to EC2 instance',
+  'route_table->vpc_endpoint': 'Route sends traffic to VPC Endpoint',
+  'route_table->vpc_peering': 'Route sends traffic to VPC Peering Connection',
+  'route_table->egress_only_igw': 'Route sends IPv6 traffic to Egress-only Internet Gateway',
+  'route_table->transit_gateway': 'Route sends traffic to Transit Gateway',
+  'vpc->vpc_endpoint': 'VPC contains Endpoint',
+  'vpc->vpc_peering': 'VPC requests Peering Connection',
+  'vpc_peering->vpc': 'Peering Connection accepted by VPC',
+  'vpc->egress_only_igw': 'Egress-only Internet Gateway attached to VPC',
+  'transit_gateway->transit_gateway_attachment': 'Transit Gateway has Attachment',
+  'transit_gateway_attachment->vpc': 'Attachment connects VPC',
+  'transit_gateway->transit_gateway_route_table': 'Transit Gateway contains Route Table',
+  'transit_gateway_route_table->transit_gateway_attachment': 'Transit Route sends traffic to Attachment',
   'vpc->alb': 'Application Load Balancer belongs to VPC',
   'vpc->nlb': 'Network Load Balancer belongs to VPC',
   'subnet->alb': 'Subnet serves Application Load Balancer',
   'subnet->nlb': 'Subnet serves Network Load Balancer',
   'alb->sg': 'Security Group attached to Application Load Balancer',
-  'nlb->sg': 'Security Group attached to Network Load Balancer'
+  'nlb->sg': 'Security Group attached to Network Load Balancer',
+  'vpc->target_group': 'Load Balancer Target Group belongs to VPC',
+  'alb->target_group': 'Application Load Balancer routes to Target Group',
+  'nlb->target_group': 'Network Load Balancer routes to Target Group',
+  'target_group->target_ec2': 'Target Group registers EC2 target',
+  'target_group->target_ip': 'Target Group registers IP target',
+  'target_group->target_lambda': 'Target Group registers Lambda target',
+  'target_group->target_alb': 'Target Group registers Application Load Balancer target'
 };
 
 const LEGACY_EDGE_LABELS = new Set(['contains', 'belongs-to', 'hosts', 'secured-by']);
@@ -829,6 +871,7 @@ export default function App() {
   const [topologyStats, setTopologyStats] = useState(null);
   const [topologyGraph, setTopologyGraph] = useState(null);
   const [topologyContext, setTopologyContext] = useState(null);
+  const [topologyWarnings, setTopologyWarnings] = useState([]);
   const [resourceCounts, setResourceCounts] = useState({});
   const [liveSearch, setLiveSearch] = useState('');
   const [selectedLiveTypes, setSelectedLiveTypes] = useState([]);
@@ -1059,6 +1102,10 @@ export default function App() {
       const graph = await invoke('fetch_topology', { profile, region });
       await renderGraph(graph);
       setTopologyGraph(graph);
+      const warnings = Array.isArray(graph?.warnings)
+        ? graph.warnings.filter((warning) => typeof warning === 'string' && warning.trim())
+        : [];
+      setTopologyWarnings(warnings);
       setTopologyContext({
         profile: profile.trim() || 'default',
         region: region.trim() || 'me-south-1'
@@ -1072,7 +1119,9 @@ export default function App() {
       }, {});
       setTopologyStats({ nodes, edges });
       setResourceCounts(counts);
-      setStatus(`Topology loaded successfully: ${nodes} nodes, ${edges} connections.`);
+      setStatus(warnings.length
+        ? `Topology loaded with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}: ${nodes} nodes, ${edges} connections.`
+        : `Topology loaded successfully: ${nodes} nodes, ${edges} connections.`);
     } catch (err) {
       const message = err?.message || String(err);
       setError(`Failed to load topology: ${message}`);
@@ -1153,6 +1202,7 @@ export default function App() {
         </div>
       </div>
       {error ? <div className={styles.errorBanner} role="alert"><Icon name="info" size={17} /><div><strong>Could not load topology</strong><p>{error.replace('Failed to load topology: ', '')}</p></div></div> : null}
+      {topologyWarnings.length ? <section className={styles.warningBanner} role="status" aria-live="polite" aria-label="Incomplete AWS inventory warnings"><Icon name="info" size={17} /><div><strong>Topology loaded with incomplete inventory</strong><p>Some AWS resources could not be read. The displayed topology includes all successfully discovered resources.</p><ul>{topologyWarnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></section> : null}
       <div className={styles.workspaceMeta}><div><strong>Topology</strong><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connections` : 'No topology loaded'}</span></div><div className={styles.status} role="status"><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</div></div>
       <div className={styles.workspace}>
         <section className={styles.graphPanel} aria-label="AWS topology graph">
