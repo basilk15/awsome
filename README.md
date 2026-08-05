@@ -16,9 +16,13 @@ It uses a lightweight Vite + React frontend and a native Rust backend. The Rust 
 - Internet gateways
 - NAT gateways
 - Route tables and their effective subnet associations/routes
+- VPC gateway and interface endpoints
+- VPC peering connections
+- Egress-only internet gateways
+- Transit Gateways, attachments, route tables, and discovered route paths
 - Application Load Balancers
 - Network Load Balancers
-- Registered EC2 targets behind Application and Network Load Balancers
+- Load-balancer target groups, health-check configuration, and registered EC2, IP, Lambda, and ALB targets
 
 Graphivo also includes a Planning mode for arranging AWS services on a manual architecture canvas without changing live infrastructure.
 
@@ -54,14 +58,16 @@ Planning data is stored only on the current device in the app webview's local st
 1. Tauri loads the Vite-built React frontend in a native desktop window.
 2. The UI calls Tauri's typed `fetch_topology` command.
 3. Rust loads the selected AWS profile and region from local AWS shared configuration.
-4. The Rust command follows every AWS pagination token, fetches load-balancer target registrations with bounded concurrency, then builds nodes and defensible network relationships only after the complete regional inventory is available.
+4. The Rust command follows every AWS pagination token, fetches load-balancer target registrations with bounded concurrency, and builds nodes and defensible network relationships from the regional inventory.
 5. Cytoscape renders the result and the UI exposes selected-resource details.
+
+If an AWS inventory API is unavailable—for example because the selected profile lacks permission—Graphivo keeps the successfully discovered resources, marks the map as incomplete, and lists the affected inventories in the UI. Internal inventory-task failures still fail the request safely.
 
 ## Live topology to architecture plan
 
 1. In **Live mode**, choose an AWS profile and region and load the topology.
 2. After the load succeeds, select **Open in planning**.
-3. Graphivo creates a deterministic, editable layout containing the discovered VPC, subnet, EC2, RDS, security-group, gateway, route-table, and ALB/NLB resources and their directed relationships.
+3. Graphivo creates a deterministic, editable layout containing the discovered network resources, load balancers, target groups, registered targets, and their directed relationships.
 4. Select an imported node to inspect its original resource label, resource ID, live type, profile, region, and import provenance. Its planning display name, size, and position can be changed without changing the saved live snapshot.
 5. Add services from the planning library or create additional connections to explore the desired “to-be” architecture.
 
@@ -110,7 +116,7 @@ You can choose:
 
 Then load the live topology from the app UI.
 
-Live mode is read-only. It makes regional inventory calls and does not create, update, or delete AWS resources. VPC, subnet, EC2, security-group, RDS, gateway, route-table, and ELBv2 inventory is fully paginated so large accounts are not silently truncated.
+Live mode is read-only. It makes regional inventory calls and does not create, update, or delete AWS resources. VPC, subnet, EC2, security-group, RDS, gateway, endpoint, peering, Transit Gateway, route-table, and ELBv2 inventory is fully paginated so large accounts are not silently truncated.
 
 For large inventories, use **Find resource** to search resource names, IDs, types, and returned details. The resource chips above the graph can also narrow the visible topology by service type; the result count makes the active subset clear.
 
@@ -131,6 +137,6 @@ src-tauri/                   Tauri configuration and Rust AWS topology command
 - Planning changes are local architecture-design edits; Graphivo does not apply them to AWS.
 - Returning to Live mode restores the loaded topology independently of planning changes.
 - Edges are emitted only when both endpoint resources were discovered. Subnets without an explicit route-table association are connected to the VPC's main route table because that is the effective AWS routing behavior.
-- Route targets are shown for discovered internet gateways, NAT gateways, and EC2 instances. Targets outside the supported inventory (for example transit gateways, VPC endpoints, peering connections, and egress-only internet gateways) are not represented yet.
+- Route targets are shown only when their endpoint was discovered, so the graph does not emit dangling connections. This includes internet gateways, NAT gateways, EC2 instances, VPC endpoints, peering connections, egress-only internet gateways, and Transit Gateways.
 - ELBv2 discovery currently visualizes Application and Network Load Balancers. Gateway Load Balancers are outside the supported-resource set.
-- Load-balancer target relationships currently represent registered EC2 instance targets. Listener/rule routing, target health state, and IP/Lambda/ALB target types are not represented yet.
+- Load-balancer paths are shown as load balancer → target group → registered target. Target registrations include target type, protocol/port, availability zone, and returned health state/reason where AWS provides them. Listener and rule routing are not represented yet.
