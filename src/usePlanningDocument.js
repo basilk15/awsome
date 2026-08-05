@@ -35,7 +35,7 @@ function browserStorage() {
 
 function safeFileName(name) {
   const normalized = name.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-').replace(/\s+/g, ' ');
-  return `${normalized || 'graphivo-architecture'}.graphivo.json`;
+  return `${normalized || 'awsome-architecture'}.awsome.json`;
 }
 
 function downloadJson(json, name) {

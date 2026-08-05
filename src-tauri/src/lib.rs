@@ -10,5 +10,5 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![fetch_topology])
         .run(tauri::generate_context!())
-        .expect("error while running Graphivo");
+        .expect("error while running awsome");
 }

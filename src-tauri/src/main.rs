@@ -1,3 +1,3 @@
 fn main() {
-    graphivo_lib::run();
+    awsome_lib::run();
 }

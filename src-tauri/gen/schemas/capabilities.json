@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capability for the Graphivo desktop window.","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"Default capability for the awsome desktop window.","local":true,"windows":["main"],"permissions":["core:default"]}}

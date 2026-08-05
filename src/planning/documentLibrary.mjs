@@ -66,7 +66,7 @@ function readItem(storage, key) {
     return storage.getItem(key);
   } catch (error) {
     throw new PlanningDocumentLibraryError(
-      `Graphivo could not read local architecture storage: ${errorMessage(error)}`,
+      `awsome could not read local architecture storage: ${errorMessage(error)}`,
       'storage_read_failed',
       { key }
     );
@@ -78,7 +78,7 @@ function writeItem(storage, key, value) {
     storage.setItem(key, value);
   } catch (error) {
     throw new PlanningDocumentLibraryError(
-      `Graphivo could not save the architecture library: ${errorMessage(error)}. Export your architecture as JSON to keep a copy.`,
+      `awsome could not save the architecture library: ${errorMessage(error)}. Export your architecture as JSON to keep a copy.`,
       'storage_write_failed',
       { key }
     );
@@ -90,7 +90,7 @@ function removeItem(storage, key) {
     storage.removeItem(key);
   } catch (error) {
     throw new PlanningDocumentLibraryError(
-      `Graphivo could not delete the selected architecture: ${errorMessage(error)}. No other local data was targeted.`,
+      `awsome could not delete the selected architecture: ${errorMessage(error)}. No other local data was targeted.`,
       'storage_delete_failed',
       { key }
     );
@@ -140,7 +140,7 @@ function parseIndex(rawIndex) {
       rawDocumentCount: 0,
       warning: issue(
         'library_index_corrupt',
-        `The architecture library index is not valid JSON: ${errorMessage(error)} Stored entries were left untouched and Graphivo will recover any readable architectures it can find.`
+        `The architecture library index is not valid JSON: ${errorMessage(error)} Stored entries were left untouched and awsome will recover any readable architectures it can find.`
       )
     };
   }
@@ -152,7 +152,7 @@ function parseIndex(rawIndex) {
       rawDocumentCount: 0,
       warning: issue(
         'library_index_corrupt',
-        'The architecture library index must be a JSON object. Stored entries were left untouched and Graphivo will recover any readable architectures it can find.'
+        'The architecture library index must be a JSON object. Stored entries were left untouched and awsome will recover any readable architectures it can find.'
       )
     };
   }
@@ -179,7 +179,7 @@ function parseIndex(rawIndex) {
       warning: issue(
         'library_index_incompatible_version',
         newer
-          ? `The local architecture library was created by a newer Graphivo version (${parsed.version}). No library changes will be made.`
+          ? `The local architecture library was created by a newer awsome version (${parsed.version}). No library changes will be made.`
           : `The local architecture library version "${String(parsed.version)}" is unsupported. No library changes will be made.`
       )
     };
@@ -192,7 +192,7 @@ function parseIndex(rawIndex) {
       rawDocumentCount: 0,
       warning: issue(
         'library_index_corrupt',
-        'The architecture library index has no valid documents list. Stored entries were left untouched and Graphivo will recover any readable architectures it can find.'
+        'The architecture library index has no valid documents list. Stored entries were left untouched and awsome will recover any readable architectures it can find.'
       )
     };
   }
@@ -247,7 +247,7 @@ function enumerateEntryKeys(storage) {
       available: false,
       warning: issue(
         'storage_enumeration_failed',
-        `Graphivo could not inspect stored architecture entries: ${errorMessage(error)} The index and entries were left untouched.`
+        `awsome could not inspect stored architecture entries: ${errorMessage(error)} The index and entries were left untouched.`
       )
     };
   }
@@ -295,7 +295,7 @@ function deserializeEntry(raw, key, expectedId, serviceCatalog, options) {
 function mutationBlockedError(state) {
   if (state.index.state === 'incompatible') {
     return new PlanningDocumentLibraryError(
-      `${state.index.warning.message} Open this library with a compatible Graphivo version.`,
+      `${state.index.warning.message} Open this library with a compatible awsome version.`,
       'library_index_incompatible'
     );
   }
@@ -330,7 +330,7 @@ function readLibraryState(storage, serviceCatalog, options = {}) {
     } catch (error) {
       warnings.push(issue(
         'storage_read_failed',
-        `Graphivo could not read architecture "${expectedId || key}": ${errorMessage(error)} Other readable architectures are still available.`,
+        `awsome could not read architecture "${expectedId || key}": ${errorMessage(error)} Other readable architectures are still available.`,
         { documentId: expectedId || undefined, key }
       ));
       continue;
@@ -554,7 +554,7 @@ export function initializePlanningDocumentLibrary(
         ...listing.warnings,
         issue(
           'legacy_storage_read_failed',
-          `Graphivo could not read the previous last-architecture save: ${errorMessage(error)} It was left untouched.`
+          `awsome could not read the previous last-architecture save: ${errorMessage(error)} It was left untouched.`
         )
       ]
     };

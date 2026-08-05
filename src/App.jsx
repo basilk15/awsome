@@ -739,7 +739,7 @@ function PlanningWorkspace({ planning }) {
         <label className={styles.documentPicker}><span>Architecture</span><select value={planningDocument.id} onChange={(event) => openArchitecture(event.target.value)} aria-label="Open a saved architecture">{libraryOptions.map((summary) => <option key={summary.id} value={summary.id}>{summary.name} · {summary.nodeCount} service{summary.nodeCount === 1 ? '' : 's'}</option>)}</select></label>
         <button className={styles.secondaryBtn} type="button" onClick={createNewArchitecture}><Icon name="plus" size={15} /> New architecture</button>
         <button className={styles.secondaryBtn} type="button" onClick={() => importInputRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
-        <input ref={importInputRef} className={styles.hiddenFileInput} type="file" accept=".json,.graphivo.json,application/json" onChange={handleImportFile} tabIndex={-1} />
+        <input ref={importInputRef} className={styles.hiddenFileInput} type="file" accept=".json,.awsome.json,.graphivo.json,application/json" onChange={handleImportFile} tabIndex={-1} />
         <button className={styles.secondaryBtn} type="button" onClick={exportArchitecture}><Icon name="download" size={15} /> Export</button>
         <button className={styles.secondaryBtn} type="button" onClick={exportArchitectureSvg}><Icon name="download" size={15} /> Export SVG</button>
         <button className={styles.secondaryBtn} type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={15} /> Undo</button>
@@ -1091,7 +1091,7 @@ export default function App() {
   const fetchTopology = useCallback(async (isRefresh) => {
     const invoke = window.__TAURI__?.core?.invoke;
     if (!invoke) {
-      setError('The Tauri backend is unavailable. Start Graphivo with `npm run dev`.');
+      setError('The Tauri backend is unavailable. Start awsome with `npm run dev`.');
       return;
     }
     setError('');
@@ -1185,7 +1185,7 @@ export default function App() {
   return <main className={styles.appShell}>
     <section className={styles.mainView}>
       <header className={styles.topbar}>
-        <div className={styles.brandLockup}><span className={styles.brandMark}><Icon name="network" size={17} /></span><div><span className={styles.brandName}>Graphivo</span><span className={styles.brandCaption}>AWS topology explorer</span></div></div>
+        <div className={styles.brandLockup}><span className={styles.brandMark}><Icon name="network" size={17} /></span><div><span className={styles.brandName}>awsome</span><span className={styles.brandCaption}>AWS topology explorer</span></div></div>
         <nav className={styles.modeSwitch} aria-label="Workspace mode"><button type="button" className={mode === 'live' ? styles.modeActive : ''} onClick={() => setMode('live')}><i />Live mode</button><button type="button" className={mode === 'planning' ? styles.modeActive : ''} onClick={() => setMode('planning')}><Icon name="grid" size={14} />Planning mode</button></nav>
         <div className={styles.topbarMeta}><span className={`${styles.connectionState} ${canFetchTopology ? styles.connectionReady : styles.connectionOffline}`}><i /> {canFetchTopology ? 'Native backend ready' : 'Tauri backend unavailable'}</span></div>
       </header>

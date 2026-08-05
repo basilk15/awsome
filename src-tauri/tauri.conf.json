@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Graphivo",
+  "productName": "awsome",
   "version": "0.1.0",
-  "identifier": "com.basil.graphivo",
+  "identifier": "com.basil.awsome",
   "build": {
     "beforeDevCommand": "npm run dev:web",
     "beforeBuildCommand": "npm run build:web",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Graphivo",
+        "title": "awsome",
         "width": 1440,
         "height": 960,
         "minWidth": 1100,

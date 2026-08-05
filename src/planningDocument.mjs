@@ -116,7 +116,7 @@ export function migratePlanningDocument(input, { now = new Date().toISOString() 
 
   if (input.version !== PLANNING_DOCUMENT_VERSION) {
     const detail = typeof input.version === 'number' && input.version > PLANNING_DOCUMENT_VERSION
-      ? 'This file was created by a newer Graphivo version.'
+      ? 'This file was created by a newer awsome version.'
       : `Expected version ${PLANNING_DOCUMENT_VERSION}.`;
     throw new PlanningDocumentError(`Unsupported planning document version "${input.version}". ${detail}`, 'incompatible_version');
   }
@@ -282,7 +282,7 @@ export function serializePlanningDocument(document, serviceCatalog, { now } = {}
 
 export function deserializePlanningDocument(text, serviceCatalog, options = {}) {
   if (typeof text !== 'string' || !text.trim()) {
-    throw new PlanningDocumentError('Choose a non-empty Graphivo JSON document.');
+    throw new PlanningDocumentError('Choose a non-empty awsome JSON document.');
   }
   let parsed;
   try {
@@ -322,7 +322,7 @@ export function loadPlanningDocument(storage, serviceCatalog, options = {}) {
     return {
       document: fallback,
       restored: false,
-      error: `Graphivo could not read local planning storage: ${error.message}`
+      error: `awsome could not read local planning storage: ${error.message}`
     };
   }
 
@@ -358,7 +358,7 @@ export function savePlanningDocument(storage, document, serviceCatalog, options 
     storage.setItem(PLANNING_DOCUMENT_STORAGE_KEY, json);
   } catch (error) {
     throw new PlanningDocumentError(
-      `Graphivo could not save locally: ${error.message}. Export your architecture as JSON to keep a copy.`,
+      `awsome could not save locally: ${error.message}. Export your architecture as JSON to keep a copy.`,
       'storage_write_failed'
     );
   }

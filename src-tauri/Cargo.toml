@@ -1,12 +1,12 @@
 [package]
-name = "graphivo"
+name = "awsome"
 version = "0.1.0"
 description = "A desktop AWS topology explorer"
 authors = ["Basil"]
 edition = "2021"
 
 [lib]
-name = "graphivo_lib"
+name = "awsome_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

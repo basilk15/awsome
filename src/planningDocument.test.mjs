@@ -113,7 +113,7 @@ test('validates catalog services, edge references, and incompatible versions wit
   assert.throws(() => normalizePlanningDocument(brokenEdge, catalog), /references a node that does not exist/);
 
   const newer = { ...exampleDocument(), version: 99 };
-  assert.throws(() => normalizePlanningDocument(newer, catalog), /newer Graphivo version/);
+  assert.throws(() => normalizePlanningDocument(newer, catalog), /newer awsome version/);
 });
 
 test('normalizes imported coordinates, sizes, service key casing, and viewport bounds', () => {

@@ -2,7 +2,7 @@
   <img src="./docs/assets/awsome-logo-transparent.png" alt="awsome logo" width="400" />
 </p>
 
-`Graphivo` is a Tauri desktop app for visualizing AWS infrastructure as an interactive topology graph and turning a live snapshot into an editable architecture plan.
+`awsome` is a Tauri desktop app for visualizing AWS infrastructure as an interactive topology graph and turning a live snapshot into an editable architecture plan.
 
 It uses a lightweight Vite + React frontend and a native Rust backend. The Rust backend reads the selected local AWS profile, fetches live resources with the AWS SDK for Rust, transforms them into graph data, and returns it to the Cytoscape UI through a Tauri command.
 
@@ -24,7 +24,7 @@ It uses a lightweight Vite + React frontend and a native Rust backend. The Rust 
 - Network Load Balancers
 - Load-balancer target groups, health-check configuration, and registered EC2, IP, Lambda, and ALB targets
 
-Graphivo also includes a Planning mode for arranging AWS services on a manual architecture canvas without changing live infrastructure.
+awsome also includes a Planning mode for arranging AWS services on a manual architecture canvas without changing live infrastructure.
 
 ## Planning Architectures
 
@@ -42,7 +42,7 @@ Open **Planning mode** from the top navigation. Planning documents support:
 
 Imported files are validated against the AWS service catalog, and an invalid or incompatible file is left unopened with an explanation in the UI. Importing a document whose id already exists asks before replacing that saved architecture. Deleting an architecture also requires confirmation.
 
-Planning data is stored only on the current device in the app webview's local storage. The library uses a versioned index with one storage entry per architecture and safely imports the older `graphivo.planning.last-document` save without deleting it. JSON files use the versioned `graphivo/planning-document` schema. Version 1 includes the document id and name, timestamps, nodes (`serviceKey`, custom name, position, size, and optional live-resource provenance), edges, and canvas viewport. If saved local data is corrupt or incompatible, Graphivo isolates unreadable entries and leaves valid architectures available.
+Planning data is stored only on the current device in the app webview's local storage. The library uses a versioned index with one storage entry per architecture and safely imports the older `graphivo.planning.last-document` save without deleting it. JSON files use the versioned `graphivo/planning-document` schema for backward compatibility. Version 1 includes the document id and name, timestamps, nodes (`serviceKey`, custom name, position, size, and optional live-resource provenance), edges, and canvas viewport. If saved local data is corrupt or incompatible, awsome isolates unreadable entries and leaves valid architectures available.
 
 ## Stack
 
@@ -61,17 +61,17 @@ Planning data is stored only on the current device in the app webview's local st
 4. The Rust command follows every AWS pagination token, fetches load-balancer target registrations with bounded concurrency, and builds nodes and defensible network relationships from the regional inventory.
 5. Cytoscape renders the result and the UI exposes selected-resource details.
 
-If an AWS inventory API is unavailable—for example because the selected profile lacks permission—Graphivo keeps the successfully discovered resources, marks the map as incomplete, and lists the affected inventories in the UI. Internal inventory-task failures still fail the request safely.
+If an AWS inventory API is unavailable—for example because the selected profile lacks permission—awsome keeps the successfully discovered resources, marks the map as incomplete, and lists the affected inventories in the UI. Internal inventory-task failures still fail the request safely.
 
 ## Live topology to architecture plan
 
 1. In **Live mode**, choose an AWS profile and region and load the topology.
 2. After the load succeeds, select **Open in planning**.
-3. Graphivo creates a deterministic, editable layout containing the discovered network resources, load balancers, target groups, registered targets, and their directed relationships.
+3. awsome creates a deterministic, editable layout containing the discovered network resources, load balancers, target groups, registered targets, and their directed relationships.
 4. Select an imported node to inspect its original resource label, resource ID, live type, profile, region, and import provenance. Its planning display name, size, and position can be changed without changing the saved live snapshot.
 5. Add services from the planning library or create additional connections to explore the desired “to-be” architecture.
 
-If the planning canvas already contains work, Graphivo asks whether to append the snapshot, replace the canvas, or cancel. Append preserves existing planning work and skips resources and relationships that were already imported, so importing the same snapshot again does not create duplicates.
+If the planning canvas already contains work, awsome asks whether to append the snapshot, replace the canvas, or cancel. Append preserves existing planning work and skips resources and relationships that were already imported, so importing the same snapshot again does not create duplicates.
 
 ## Development
 
@@ -134,7 +134,7 @@ src-tauri/                   Tauri configuration and Rust AWS topology command
 ## Notes
 
 - There is no Electron, Next.js, or Node.js AWS backend in the app runtime.
-- Planning changes are local architecture-design edits; Graphivo does not apply them to AWS.
+- Planning changes are local architecture-design edits; awsome does not apply them to AWS.
 - Returning to Live mode restores the loaded topology independently of planning changes.
 - Edges are emitted only when both endpoint resources were discovered. Subnets without an explicit route-table association are connected to the VPC's main route table because that is the effective AWS routing behavior.
 - Route targets are shown only when their endpoint was discovered, so the graph does not emit dangling connections. This includes internet gateways, NAT gateways, EC2 instances, VPC endpoints, peering connections, egress-only internet gateways, and Transit Gateways.

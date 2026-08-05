@@ -581,6 +581,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "awsome"
+version = "0.1.0"
+dependencies = [
+ "aws-config",
+ "aws-sdk-ec2",
+ "aws-sdk-elasticloadbalancingv2",
+ "aws-sdk-rds",
+ "serde",
+ "tauri",
+ "tauri-build",
+ "tokio",
+]
+
+[[package]]
 name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1726,20 +1740,6 @@ dependencies = [
  "glib-sys",
  "libc",
  "system-deps",
-]
-
-[[package]]
-name = "graphivo"
-version = "0.1.0"
-dependencies = [
- "aws-config",
- "aws-sdk-ec2",
- "aws-sdk-elasticloadbalancingv2",
- "aws-sdk-rds",
- "serde",
- "tauri",
- "tauri-build",
- "tokio",
 ]
 
 [[package]]

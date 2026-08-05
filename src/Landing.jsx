@@ -34,7 +34,7 @@ export default function Landing({ onComplete }) {
     <div className={styles.ambient} aria-hidden="true"><span /><span /><span /></div>
     <div className={styles.grid} aria-hidden="true" />
     <div className={styles.content}>
-      <div className={styles.brand}><span className={styles.brandMark}><NetworkMark /></span><span>Graphivo</span></div>
+      <div className={styles.brand}><span className={styles.brandMark}><NetworkMark /></span><span>awsome</span></div>
       <div className={styles.hero}>
         <p className={styles.eyebrow}><i /> AWS topology explorer</p>
         <h1>See how your cloud<br /><em>connects.</em></h1>
