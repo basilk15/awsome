@@ -882,6 +882,7 @@ export default function App() {
   const cyContainerRef = useRef(null);
   const cyInstanceRef = useRef(null);
   const liveDragAutoPanRef = useRef(null);
+  const liveGraphFitFrameRef = useRef(null);
 
   const stopLiveDragAutoPan = useCallback(() => {
     const state = liveDragAutoPanRef.current;
@@ -889,28 +890,41 @@ export default function App() {
     liveDragAutoPanRef.current = null;
   }, []);
 
+  const cancelLiveGraphFit = useCallback(() => {
+    if (liveGraphFitFrameRef.current != null) {
+      window.cancelAnimationFrame(liveGraphFitFrameRef.current);
+      liveGraphFitFrameRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     setCanFetchTopology(Boolean(window.__TAURI__?.core?.invoke));
     return () => {
       stopLiveDragAutoPan();
+      cancelLiveGraphFit();
       if (cyInstanceRef.current) cyInstanceRef.current.destroy();
     };
-  }, [stopLiveDragAutoPan]);
+  }, [cancelLiveGraphFit, stopLiveDragAutoPan]);
 
   const destroyGraph = useCallback(() => {
     stopLiveDragAutoPan();
+    cancelLiveGraphFit();
     if (cyInstanceRef.current) {
       cyInstanceRef.current.destroy();
       cyInstanceRef.current = null;
     }
-  }, [stopLiveDragAutoPan]);
+  }, [cancelLiveGraphFit, stopLiveDragAutoPan]);
 
   const applyZoomedFit = useCallback(() => {
     const cy = cyInstanceRef.current;
     if (!cy) return;
     cy.resize();
-    cy.fit(cy.elements(), 86);
-    cy.center();
+    const bounds = cy.elements().boundingBox({
+      includeEdges: true,
+      includeLabels: true,
+      includeOverlays: false
+    });
+    cy.fit(bounds, 96);
   }, []);
 
   const adjustLiveZoom = useCallback((factor) => {
@@ -937,15 +951,15 @@ export default function App() {
       container: cyContainerRef.current,
       elements: { nodes, edges },
       style: [
-        { selector: 'node', style: { shape: 'round-rectangle', width: 'data(nodeWidth)', height: 'data(nodeHeight)', 'background-color': '#ffffff', 'background-image': 'data(icon)', 'background-fit': 'none', 'background-width': 34, 'background-height': 34, 'background-position-x': '50%', 'background-position-y': '25%', 'background-repeat': 'no-repeat', 'background-image-opacity': 1, 'background-opacity': 1, label: 'data(displayLabel)', color: '#162033', 'font-size': 9.5, 'font-weight': 600, 'line-height': 1.5, 'text-wrap': 'wrap', 'text-max-width': 'data(textMaxWidth)', 'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': -38, 'text-justification': 'center', 'border-width': 1.2, 'border-color': '#b9c7d8', 'overlay-opacity': 0, padding: 0, 'shadow-color': '#6d7d91', 'shadow-blur': 5, 'shadow-opacity': 0.12, 'shadow-offset-x': 0, 'shadow-offset-y': 3, 'transition-property': 'border-color, border-width, shadow-blur, shadow-opacity', 'transition-duration': '180ms' } },
+        { selector: 'node', style: { shape: 'round-rectangle', width: 'data(nodeWidth)', height: 'data(nodeHeight)', 'background-color': '#ffffff', 'background-image': 'data(icon)', 'background-fit': 'none', 'background-width': 34, 'background-height': 34, 'background-position-x': '50%', 'background-position-y': '25%', 'background-repeat': 'no-repeat', 'background-image-opacity': 1, 'background-opacity': 1, label: 'data(displayLabel)', color: '#162033', 'font-size': 12, 'font-weight': 650, 'line-height': 1.5, 'text-wrap': 'wrap', 'text-max-width': 'data(textMaxWidth)', 'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': -38, 'text-justification': 'center', 'border-width': 1.2, 'border-color': '#b9c7d8', 'overlay-opacity': 0, padding: 0, 'shadow-color': '#6d7d91', 'shadow-blur': 5, 'shadow-opacity': 0.12, 'shadow-offset-x': 0, 'shadow-offset-y': 3, 'transition-property': 'border-color, border-width, shadow-blur, shadow-opacity', 'transition-duration': '180ms' } },
         { selector: 'node.hovered', style: { 'border-color': '#2563eb', 'border-width': 2.4, 'shadow-color': '#60a5fa', 'shadow-blur': 15, 'shadow-opacity': 0.35 } },
         { selector: 'node[compact = "yes"]', style: { 'text-valign': 'center', 'text-margin-y': 0, 'background-color': '#f8fafc', 'border-color': '#cbd5e1' } },
         { selector: 'node.connected-node', style: { 'border-color': '#4f83cc', 'shadow-opacity': 0.27 } },
         { selector: 'node:selected', style: { 'border-color': '#2563eb', 'border-width': 2.6, 'shadow-color': '#60a5fa', 'shadow-blur': 16, 'shadow-opacity': 0.42 } },
-        { selector: 'edge', style: { width: 1.7, 'line-color': '#8ca3bd', 'target-arrow-color': '#8ca3bd', 'target-arrow-shape': 'triangle', 'arrow-scale': 1.05, 'curve-style': 'bezier', 'control-point-step-size': 36, label: 'data(displayLabel)', color: '#53657a', 'font-size': 7.5, 'font-weight': 560, 'text-rotation': 'autorotate', 'text-margin-y': -7, 'text-background-color': '#ffffff', 'text-background-opacity': 0.88, 'text-background-padding': 2, 'text-border-color': '#e2e8f0', 'text-border-width': 0.5, 'text-border-opacity': 0.8, 'overlay-opacity': 0, 'transition-property': 'line-color, target-arrow-color, width', 'transition-duration': '180ms' } },
+        { selector: 'edge', style: { width: 1.7, 'line-color': '#8ca3bd', 'target-arrow-color': '#8ca3bd', 'target-arrow-shape': 'triangle', 'arrow-scale': 1.05, 'curve-style': 'bezier', 'control-point-step-size': 36, label: 'data(displayLabel)', color: '#53657a', 'font-size': 10, 'font-weight': 620, 'text-rotation': 'autorotate', 'text-margin-y': -7, 'text-background-color': '#ffffff', 'text-background-opacity': 0.88, 'text-background-padding': 2, 'text-border-color': '#e2e8f0', 'text-border-width': 0.5, 'text-border-opacity': 0.8, 'overlay-opacity': 0, 'transition-property': 'line-color, target-arrow-color, width', 'transition-duration': '180ms' } },
         { selector: 'edge.connected-hover, edge:selected', style: { width: 2.8, 'line-color': '#2563eb', 'target-arrow-color': '#2563eb' } }
       ],
-      layout: { name: 'breadthfirst', directed: true, animate: true, animationDuration: 450, fit: true, padding: 86, spacingFactor: 0.92, avoidOverlap: true, nodeDimensionsIncludeLabels: true },
+      layout: { name: 'breadthfirst', directed: true, animate: false, fit: false, padding: 86, spacingFactor: 1.6, avoidOverlap: true, nodeDimensionsIncludeLabels: true },
       minZoom: 0.3,
       maxZoom: 6,
       userZoomingEnabled: true,
@@ -953,6 +967,11 @@ export default function App() {
       userPanningEnabled: true
     });
     cyInstanceRef.current = cy;
+    applyZoomedFit();
+    liveGraphFitFrameRef.current = window.requestAnimationFrame(() => {
+      liveGraphFitFrameRef.current = null;
+      if (cyInstanceRef.current === cy && !cy.destroyed()) applyZoomedFit();
+    });
     const liveCanvasElement = cyContainerRef.current;
     const stopLiveCanvasPanning = () => liveCanvasElement?.classList.remove(styles.cyPanning);
 
@@ -1045,9 +1064,6 @@ export default function App() {
       });
     });
     cy.on('tap', (event) => { if (event.target === cy) setSelectedNode(null); });
-    cy.one('layoutstop', applyZoomedFit);
-    setTimeout(applyZoomedFit, 900);
-    setTimeout(applyZoomedFit, 1700);
   }, [applyZoomedFit, destroyGraph, stopLiveDragAutoPan]);
 
   const filteredTopologyGraph = useMemo(
@@ -1100,7 +1116,6 @@ export default function App() {
     setStatus(isRefresh ? 'Refreshing topology from AWS...' : 'Loading topology from AWS...');
     try {
       const graph = await invoke('fetch_topology', { profile, region });
-      await renderGraph(graph);
       setTopologyGraph(graph);
       const warnings = Array.isArray(graph?.warnings)
         ? graph.warnings.filter((warning) => typeof warning === 'string' && warning.trim())
