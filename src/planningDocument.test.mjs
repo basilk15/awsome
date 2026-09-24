@@ -139,7 +139,7 @@ test('normalizes imported coordinates, sizes, service key casing, and viewport b
     },
     { serviceKey: 'ec2', x: 0, y: 2932, width: 126, height: 68 }
   );
-  assert.deepEqual(normalized.viewport, { zoom: 1.55, pan: { x: 0, y: -4650 } });
+  assert.deepEqual(normalized.viewport, { zoom: 2.4, pan: { x: 0, y: -7200 } });
 });
 
 test('corrupt saved data falls back safely without overwriting it', () => {

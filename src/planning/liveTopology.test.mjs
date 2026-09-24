@@ -88,6 +88,27 @@ test('imports load-balancer target groups and every registered target type', () 
   assert.equal(plan.edges.find((edge) => edge.sourceEdgeId === 'group-ip').label, 'registered IP target (HTTP; 8080; unhealthy; Target.Timeout)');
 });
 
+test('imports listener and rule routing without losing source or condition labels', () => {
+  const graph = {
+    nodes: [
+      { data: { id: 'alb-web', type: 'alb', label: 'web' } },
+      { data: { id: 'listener-https', type: 'listener', label: 'HTTPS:443' } },
+      { data: { id: 'listener_rule-api', type: 'listener_rule', label: 'Rule 10', details: { Conditions: 'path-pattern: /api/*' } } },
+      { data: { id: 'target_group-api', type: 'target_group', label: 'api' } }
+    ],
+    edges: [
+      { data: { id: 'lb-listener', source: 'alb-web', target: 'listener-https', label: 'accepts traffic on listener' } },
+      { data: { id: 'listener-rule', source: 'listener-https', target: 'listener_rule-api', label: 'evaluates priority 10' } },
+      { data: { id: 'rule-group', source: 'listener_rule-api', target: 'target_group-api', label: 'forwards to target group (weight 80)' } }
+    ]
+  };
+  const plan = convertLiveTopologyToPlan(graph, context);
+  assert.deepEqual(new Set(plan.nodes.map((node) => node.serviceKey)), new Set(['alb', 'listener', 'listener_rule', 'target_group']));
+  assert.equal(plan.edges.length, 3);
+  assert.equal(plan.edges.find((edge) => edge.sourceEdgeId === 'rule-group').label, 'forwards to target group (weight 80)');
+  assert.equal(plan.nodes.find((node) => node.liveResourceType === 'listener_rule').profile, 'production');
+});
+
 test('layout is deterministic, graph-ranked, bounded, and non-overlapping for an ordinary graph', () => {
   const first = convertLiveTopologyToPlan(liveGraph, context);
   const reordered = convertLiveTopologyToPlan({

@@ -20,6 +20,8 @@ export const LIVE_SERVICE_DEFINITIONS = {
   transit_gateway_route_table: { category: 'Networking', name: 'Transit Gateway Route Table', key: 'transit_gateway_route_table', color: '#6d28d9' },
   alb: { category: 'Networking', name: 'Application Load Balancer', key: 'alb', color: '#8c4fff' },
   nlb: { category: 'Networking', name: 'Network Load Balancer', key: 'nlb', color: '#5b5fc7' },
+  listener: { category: 'Networking', name: 'Load Balancer Listener', key: 'listener', color: '#4f46e5' },
+  listener_rule: { category: 'Networking', name: 'Listener Rule', key: 'listener_rule', color: '#6366f1' },
   target_group: { category: 'Networking', name: 'Load Balancer Target Group', key: 'target_group', color: '#7c3aed' },
   target_ec2: { category: 'Compute', name: 'Registered EC2 Target', key: 'target_ec2', color: '#ec7211' },
   target_ip: { category: 'Networking', name: 'Registered IP Target', key: 'target_ip', color: '#0f766e' },

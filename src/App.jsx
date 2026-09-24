@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from '../styles/Home.module.css';
 import ec2Icon from 'aws-icons/icons/architecture-service/AmazonEC2.svg';
 import lambdaIcon from 'aws-icons/icons/architecture-service/AWSLambda.svg';
@@ -45,8 +45,16 @@ import ssmIcon from 'aws-icons/icons/architecture-service/AWSSystemsManager.svg'
 import bedrockIcon from 'aws-icons/icons/architecture-service/AmazonBedrock.svg';
 import sagemakerIcon from 'aws-icons/icons/architecture-service/AmazonSageMakerAI.svg';
 import rekognitionIcon from 'aws-icons/icons/architecture-service/AmazonRekognition.svg';
+import internetGatewayIcon from 'aws-icons/icons/resource/AmazonVPCInternetGateway.svg';
+import natGatewayIcon from 'aws-icons/icons/resource/AmazonVPCNATGateway.svg';
+import vpcEndpointIcon from 'aws-icons/icons/resource/AmazonVPCEndpoints.svg';
+import vpcPeeringIcon from 'aws-icons/icons/resource/AmazonVPCPeeringConnection.svg';
+import transitGatewayAttachmentIcon from 'aws-icons/icons/resource/AWSTransitGatewayAttachment.svg';
+import applicationLoadBalancerIcon from 'aws-icons/icons/resource/ElasticLoadBalancingApplicationLoadBalancer.svg';
+import networkLoadBalancerIcon from 'aws-icons/icons/resource/ElasticLoadBalancingNetworkLoadBalancer.svg';
 import Landing from './Landing';
-import { getLiveCanvasAutoPanDelta, getWheelZoomFactor } from './liveCanvas.mjs';
+import logo from '../docs/assets/awsome-logo-transparent.png';
+import { canShowLiveEdgeLabel, getKeyboardZoomDirection, getLiveCanvasAutoPanDelta, getLiveEdgeDisplayLabel, getWheelZoomFactor, getZoomedCanvasViewport } from './liveCanvas.mjs';
 import { filterLiveTopologyGraph } from './liveTopologyFilter.mjs';
 import {
   MAX_PLANNING_CONNECTION_LABEL_LENGTH,
@@ -56,6 +64,11 @@ import {
   createPlanningSvgArtifact,
   downloadPlanningSvgArtifact
 } from './planning/canvasExport.mjs';
+import {
+  DEFAULT_PLANNING_ZOOM,
+  MAX_PLANNING_ZOOM,
+  MIN_PLANNING_ZOOM
+} from './planningDocument.mjs';
 import usePlanningDocument from './usePlanningDocument';
 import {
   convertLiveTopologyToPlan,
@@ -66,34 +79,36 @@ import {
 } from './planning/liveTopology.mjs';
 
 const SERVICE_MAP = {
-  vpc: { heading: 'VPC', icon: 'aws/amazon-vpc.svg', fallbackColor: '#7b3fe4' },
-  subnet: { heading: 'Subnet', icon: 'aws/subnet.svg', fallbackColor: '#8f67d8' },
-  ec2: { heading: 'EC2 Instance', icon: 'aws/ec2.svg', fallbackColor: '#ec7211' },
-  rds: { heading: 'RDS Instance', icon: 'aws/rds.svg', fallbackColor: '#3b48cc' },
-  sg: { heading: 'Security Group', icon: 'sg.svg', fallbackColor: '#64748b' },
-  igw: { heading: 'Internet Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#2f855a' },
-  nat: { heading: 'NAT Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#0f9f9a' },
-  route_table: { heading: 'Route Table', icon: 'aws/vpc-resource.svg', fallbackColor: '#475569' },
-  vpc_endpoint: { heading: 'VPC Endpoint', icon: 'aws/vpc-resource.svg', fallbackColor: '#2563eb' },
-  vpc_peering: { heading: 'VPC Peering Connection', icon: 'aws/vpc-resource.svg', fallbackColor: '#0284c7' },
-  egress_only_igw: { heading: 'Egress-only Internet Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#0f766e' },
-  transit_gateway: { heading: 'Transit Gateway', icon: 'aws/vpc-resource.svg', fallbackColor: '#7c3aed' },
-  transit_gateway_attachment: { heading: 'Transit Gateway Attachment', icon: 'aws/vpc-resource.svg', fallbackColor: '#a855f7' },
-  transit_gateway_route_table: { heading: 'Transit Gateway Route Table', icon: 'aws/vpc-resource.svg', fallbackColor: '#6d28d9' },
-  alb: { heading: 'Application Load Balancer', icon: elbIcon, fallbackColor: '#8c4fff' },
-  nlb: { heading: 'Network Load Balancer', icon: elbIcon, fallbackColor: '#5b5fc7' },
+  vpc: { heading: 'VPC', icon: vpcIcon, fallbackColor: '#7b3fe4' },
+  subnet: { heading: 'Subnet', icon: vpcIcon, fallbackColor: '#8f67d8' },
+  ec2: { heading: 'EC2 Instance', icon: ec2Icon, fallbackColor: '#ec7211' },
+  rds: { heading: 'RDS Instance', icon: rdsIcon, fallbackColor: '#3b48cc' },
+  sg: { heading: 'Security Group', icon: vpcIcon, fallbackColor: '#64748b' },
+  igw: { heading: 'Internet Gateway', icon: internetGatewayIcon, fallbackColor: '#2f855a' },
+  nat: { heading: 'NAT Gateway', icon: natGatewayIcon, fallbackColor: '#0f9f9a' },
+  route_table: { heading: 'Route Table', icon: vpcIcon, fallbackColor: '#475569' },
+  vpc_endpoint: { heading: 'VPC Endpoint', icon: vpcEndpointIcon, fallbackColor: '#2563eb' },
+  vpc_peering: { heading: 'VPC Peering Connection', icon: vpcPeeringIcon, fallbackColor: '#0284c7' },
+  egress_only_igw: { heading: 'Egress-only Internet Gateway', icon: vpcIcon, fallbackColor: '#0f766e' },
+  transit_gateway: { heading: 'Transit Gateway', icon: transitIcon, fallbackColor: '#7c3aed' },
+  transit_gateway_attachment: { heading: 'Transit Gateway Attachment', icon: transitGatewayAttachmentIcon, fallbackColor: '#a855f7' },
+  transit_gateway_route_table: { heading: 'Transit Gateway Route Table', icon: transitIcon, fallbackColor: '#6d28d9' },
+  alb: { heading: 'Application Load Balancer', icon: applicationLoadBalancerIcon, fallbackColor: '#8c4fff' },
+  nlb: { heading: 'Network Load Balancer', icon: networkLoadBalancerIcon, fallbackColor: '#5b5fc7' },
+  listener: { heading: 'Load Balancer Listener', icon: elbIcon, fallbackColor: '#4f46e5' },
+  listener_rule: { heading: 'Listener Rule', icon: elbIcon, fallbackColor: '#6366f1' },
   target_group: { heading: 'Load Balancer Target Group', icon: elbIcon, fallbackColor: '#7c3aed' },
-  target_ec2: { heading: 'Registered EC2 Target', icon: 'aws/ec2.svg', fallbackColor: '#ec7211' },
-  target_ip: { heading: 'Registered IP Target', icon: 'aws/vpc-resource.svg', fallbackColor: '#0f766e' },
+  target_ec2: { heading: 'Registered EC2 Target', icon: ec2Icon, fallbackColor: '#ec7211' },
+  target_ip: { heading: 'Registered IP Target', icon: elbIcon, fallbackColor: '#0f766e' },
   target_lambda: { heading: 'Registered Lambda Target', icon: lambdaIcon, fallbackColor: '#ff9900' },
-  target_alb: { heading: 'Registered ALB Target', icon: elbIcon, fallbackColor: '#8c4fff' }
+  target_alb: { heading: 'Registered ALB Target', icon: applicationLoadBalancerIcon, fallbackColor: '#8c4fff' }
 };
 
 const PLANNING_SERVICES = [
   ['Compute', 'Amazon EC2', 'ec2', '#ec7211'], ['Compute', 'AWS Lambda', 'lambda', '#ff9900'], ['Compute', 'Amazon ECS', 'ecs', '#d86613'], ['Compute', 'Amazon EKS', 'eks', '#326ce5'], ['Compute', 'AWS Fargate', 'fargate', '#ec7211'], ['Compute', 'Elastic Beanstalk', 'beanstalk', '#3f8624'], ['Compute', 'AWS Batch', 'batch', '#ec7211'],
   ['Storage', 'Amazon S3', 's3', '#569a31'], ['Storage', 'Amazon EBS', 'ebs', '#e7157b'], ['Storage', 'Amazon EFS', 'efs', '#8c4fff'], ['Storage', 'Amazon FSx', 'fsx', '#df3312'], ['Storage', 'Storage Gateway', 'gateway', '#569a31'],
   ['Database', 'Amazon RDS', 'rds', '#3b48cc'], ['Database', 'Amazon Aurora', 'aurora', '#3b48cc'], ['Database', 'Amazon DynamoDB', 'dynamodb', '#4053d6'], ['Database', 'Amazon ElastiCache', 'elasticache', '#c925d1'], ['Database', 'Amazon Redshift', 'redshift', '#8b3eb8'], ['Database', 'Amazon Neptune', 'neptune', '#00a1c9'],
-  ['Networking', 'Amazon VPC', 'vpc', '#7b3fe4'], ['Networking', 'VPC Subnet', 'subnet', '#8f67d8'], ['Networking', 'Internet Gateway', 'igw', '#2f855a'], ['Networking', 'NAT Gateway', 'nat', '#0f9f9a'], ['Networking', 'Route Table', 'route_table', '#475569'], ['Networking', 'VPC Endpoint', 'vpc_endpoint', '#2563eb'], ['Networking', 'VPC Peering Connection', 'vpc_peering', '#0284c7'], ['Networking', 'Egress-only Internet Gateway', 'egress_only_igw', '#0f766e'], ['Networking', 'Transit Gateway Attachment', 'transit_gateway_attachment', '#a855f7'], ['Networking', 'Transit Gateway Route Table', 'transit_gateway_route_table', '#6d28d9'], ['Networking', 'Application Load Balancer', 'alb', '#8c4fff'], ['Networking', 'Network Load Balancer', 'nlb', '#5b5fc7'], ['Networking', 'Load Balancer Target Group', 'target_group', '#7c3aed'], ['Networking', 'Registered IP Target', 'target_ip', '#0f766e'], ['Networking', 'Registered ALB Target', 'target_alb', '#8c4fff'], ['Networking', 'Elastic Load Balancing', 'elb', '#8c4fff'], ['Networking', 'Amazon CloudFront', 'cloudfront', '#8c4fff'], ['Networking', 'Amazon Route 53', 'route53', '#8c4fff'], ['Networking', 'Amazon API Gateway', 'api', '#8c4fff'], ['Networking', 'AWS Transit Gateway', 'transit', '#8c4fff'],
+  ['Networking', 'Amazon VPC', 'vpc', '#7b3fe4'], ['Networking', 'VPC Subnet', 'subnet', '#8f67d8'], ['Networking', 'Internet Gateway', 'igw', '#2f855a'], ['Networking', 'NAT Gateway', 'nat', '#0f9f9a'], ['Networking', 'Route Table', 'route_table', '#475569'], ['Networking', 'VPC Endpoint', 'vpc_endpoint', '#2563eb'], ['Networking', 'VPC Peering Connection', 'vpc_peering', '#0284c7'], ['Networking', 'Egress-only Internet Gateway', 'egress_only_igw', '#0f766e'], ['Networking', 'Transit Gateway Attachment', 'transit_gateway_attachment', '#a855f7'], ['Networking', 'Transit Gateway Route Table', 'transit_gateway_route_table', '#6d28d9'], ['Networking', 'Application Load Balancer', 'alb', '#8c4fff'], ['Networking', 'Network Load Balancer', 'nlb', '#5b5fc7'], ['Networking', 'Load Balancer Listener', 'listener', '#4f46e5'], ['Networking', 'Listener Rule', 'listener_rule', '#6366f1'], ['Networking', 'Load Balancer Target Group', 'target_group', '#7c3aed'], ['Networking', 'Registered IP Target', 'target_ip', '#0f766e'], ['Networking', 'Registered ALB Target', 'target_alb', '#8c4fff'], ['Networking', 'Elastic Load Balancing', 'elb', '#8c4fff'], ['Networking', 'Amazon CloudFront', 'cloudfront', '#8c4fff'], ['Networking', 'Amazon Route 53', 'route53', '#8c4fff'], ['Networking', 'Amazon API Gateway', 'api', '#8c4fff'], ['Networking', 'AWS Transit Gateway', 'transit', '#8c4fff'],
   ['Compute', 'Registered EC2 Target', 'target_ec2', '#ec7211'], ['Compute', 'Registered Lambda Target', 'target_lambda', '#ff9900'],
   ['Security', 'Security Group', 'sg', '#64748b'], ['Security', 'AWS IAM', 'iam', '#dd344c'], ['Security', 'AWS KMS', 'kms', '#dd344c'], ['Security', 'AWS WAF', 'waf', '#dd344c'], ['Security', 'AWS Secrets Manager', 'secrets', '#dd344c'], ['Security', 'Amazon Cognito', 'cognito', '#dd344c'],
   ['Integration', 'Amazon SQS', 'sqs', '#e7157b'], ['Integration', 'Amazon SNS', 'sns', '#e7157b'], ['Integration', 'Amazon EventBridge', 'eventbridge', '#e7157b'], ['Integration', 'AWS Step Functions', 'stepfunctions', '#e7157b'],
@@ -106,8 +121,8 @@ const PLANNING_ICON_PATHS = {
   ec2: ec2Icon, lambda: lambdaIcon, ecs: ecsIcon, eks: eksIcon, fargate: fargateIcon, beanstalk: beanstalkIcon, batch: batchIcon,
   s3: s3Icon, ebs: ebsIcon, efs: efsIcon, fsx: fsxIcon, gateway: gatewayIcon,
   rds: rdsIcon, aurora: auroraIcon, dynamodb: dynamodbIcon, elasticache: elasticacheIcon, redshift: redshiftIcon, neptune: neptuneIcon,
-  vpc: vpcIcon, subnet: '/assets/aws/subnet.svg', igw: vpcIcon, nat: vpcIcon, route_table: vpcIcon, vpc_endpoint: vpcIcon, vpc_peering: vpcIcon, egress_only_igw: vpcIcon, transit_gateway: transitIcon, transit_gateway_attachment: transitIcon, transit_gateway_route_table: transitIcon, alb: elbIcon, nlb: elbIcon, target_group: elbIcon, target_ec2: ec2Icon, target_ip: vpcIcon, target_lambda: lambdaIcon, target_alb: elbIcon, elb: elbIcon, cloudfront: cloudfrontIcon, route53: route53Icon, api: apiIcon, transit: transitIcon,
-  sg: '/assets/sg.svg', iam: iamIcon, kms: kmsIcon, waf: wafIcon, secrets: secretsIcon, cognito: cognitoIcon,
+  vpc: vpcIcon, subnet: vpcIcon, igw: internetGatewayIcon, nat: natGatewayIcon, route_table: vpcIcon, vpc_endpoint: vpcEndpointIcon, vpc_peering: vpcPeeringIcon, egress_only_igw: vpcIcon, transit_gateway: transitIcon, transit_gateway_attachment: transitGatewayAttachmentIcon, transit_gateway_route_table: transitIcon, alb: applicationLoadBalancerIcon, nlb: networkLoadBalancerIcon, listener: elbIcon, listener_rule: elbIcon, target_group: elbIcon, target_ec2: ec2Icon, target_ip: elbIcon, target_lambda: lambdaIcon, target_alb: applicationLoadBalancerIcon, elb: elbIcon, cloudfront: cloudfrontIcon, route53: route53Icon, api: apiIcon, transit: transitIcon,
+  sg: vpcIcon, iam: iamIcon, kms: kmsIcon, waf: wafIcon, secrets: secretsIcon, cognito: cognitoIcon,
   sqs: sqsIcon, sns: snsIcon, eventbridge: eventbridgeIcon, stepfunctions: stepfunctionsIcon,
   athena: athenaIcon, glue: glueIcon, kinesis: kinesisIcon, opensearch: opensearchIcon, quicksight: quicksightIcon,
   cloudwatch: cloudwatchIcon, cloudformation: cloudformationIcon, cloudtrail: cloudtrailIcon, ssm: ssmIcon,
@@ -146,6 +161,8 @@ const PLANNING_SERVICE_DETAILS = {
   transit_gateway_route_table: ['Routing rules for a transit gateway.', 'Choose the attachment that receives traffic for each destination.'],
   alb: ['Layer 7 load balancing for HTTP and HTTPS applications.', 'Route application requests across healthy services using host and path rules.'],
   nlb: ['High-performance Layer 4 load balancing for TCP, UDP, and TLS.', 'Distribute low-latency network traffic across healthy targets.'],
+  listener: ['An entry point on a load balancer with a protocol and port.', 'Accept connections and evaluate its routing rules.'],
+  listener_rule: ['A condition and action evaluated by a load balancer listener.', 'Forward, redirect, or respond to matching traffic.'],
   target_group: ['A set of registered targets behind an Elastic Load Balancer.', 'Apply a routing and health-check policy to a workload.'],
   target_ec2: ['An EC2 instance registered with a load-balancer target group.', 'Receive traffic on the configured target port.'],
   target_ip: ['An IP address registered with a load-balancer target group.', 'Route traffic to private IP workloads such as containers or on-premises targets.'],
@@ -182,18 +199,16 @@ const PLANNING_SERVICE_DETAILS = {
 
 const MIN_PLANNING_NODE_WIDTH = 126;
 const MIN_PLANNING_NODE_HEIGHT = 68;
-const MIN_PLANNING_ZOOM = 0.6;
-const MAX_PLANNING_ZOOM = 1.55;
 
 function getPlanningNodeVisualStyle(node) {
   const widthRatio = (node.width || DEFAULT_PLANNING_NODE_WIDTH) / DEFAULT_PLANNING_NODE_WIDTH;
   const heightRatio = (node.height || DEFAULT_PLANNING_NODE_HEIGHT) / DEFAULT_PLANNING_NODE_HEIGHT;
   const scale = Math.min(2.2, Math.max(0.85, Math.sqrt(widthRatio * heightRatio)));
   return {
-    '--node-icon-size': `${Math.round(38 * scale)}px`,
-    '--node-icon-image-size': `${Math.round(28 * scale)}px`,
+    '--node-icon-size': `${Math.round(42 * scale)}px`,
+    '--node-icon-image-size': `${Math.round(32 * scale)}px`,
     '--node-icon-radius': `${Math.round(8 * scale)}px`,
-    '--node-label-size': `${Math.round(12 * scale * 10) / 10}px`,
+    '--node-label-size': `${Math.round(15 * scale * 10) / 10}px`,
     '--node-content-gap': `${Math.round(9 * scale)}px`,
     '--node-content-padding': `${Math.round(10 * Math.min(scale, 1.55))}px`
   };
@@ -233,8 +248,10 @@ const EDGE_TEXT_BY_RELATION = {
   'alb->sg': 'Security Group attached to Application Load Balancer',
   'nlb->sg': 'Security Group attached to Network Load Balancer',
   'vpc->target_group': 'Load Balancer Target Group belongs to VPC',
-  'alb->target_group': 'Application Load Balancer routes to Target Group',
-  'nlb->target_group': 'Network Load Balancer routes to Target Group',
+  'alb->listener': 'Application Load Balancer has Listener',
+  'nlb->listener': 'Network Load Balancer has Listener',
+  'listener->listener_rule': 'Listener evaluates Rule',
+  'listener_rule->target_group': 'Rule forwards to Target Group',
   'target_group->target_ec2': 'Target Group registers EC2 target',
   'target_group->target_ip': 'Target Group registers IP target',
   'target_group->target_lambda': 'Target Group registers Lambda target',
@@ -255,21 +272,32 @@ function getResourceId(id) {
   return dash > 0 ? id.slice(dash + 1) : id;
 }
 
+function shortenCanvasText(value, maxLength = 20) {
+  const text = String(value || '');
+  if (text.length <= maxLength) return text;
+  if (/^[a-z][a-z0-9_-]*-[a-f0-9]{8,}$/i.test(text)) {
+    return `${text.slice(0, maxLength - 6)}…${text.slice(-5)}`;
+  }
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
 function toDisplayNode(node) {
   const nodeData = node && typeof node.data === 'object' ? node.data : {};
   const type = nodeData.type || getNodeTypeFromId(nodeData.id);
-  const service = SERVICE_MAP[type] || { heading: 'AWS Resource', icon: 'aws/vpc.svg', fallbackColor: '#4f83cc' };
+  const service = SERVICE_MAP[type] || { heading: 'AWS Resource', icon: 'none', fallbackColor: '#4f83cc' };
   const resourceName = (nodeData.label && String(nodeData.label)) || getResourceId(nodeData.id) || 'Unknown';
   const rawId = getResourceId(nodeData.id);
-  const lines = resourceName === rawId ? [service.heading, rawId] : [resourceName, rawId];
+  const lines = resourceName === rawId
+    ? [service.heading, shortenCanvasText(rawId, 18)]
+    : [shortenCanvasText(resourceName), shortenCanvasText(rawId, 18)];
   const longestLine = lines.reduce((max, line) => Math.max(max, line.length), 10);
   const hasIcon = Boolean(service.icon && service.icon !== 'none');
   const icon = hasIcon && (service.icon.startsWith('/') || service.icon.startsWith('data:'))
     ? service.icon
     : hasIcon ? `/assets/${service.icon}` : 'none';
   const compact = !hasIcon;
-  const nodeWidth = compact ? Math.min(205, Math.max(148, Math.round(longestLine * 5.8 + 28))) : Math.min(210, Math.max(160, Math.round(longestLine * 5.8 + 28)));
-  const nodeHeight = compact ? 82 : 132;
+  const nodeWidth = compact ? Math.min(236, Math.max(178, Math.round(longestLine * 7.2 + 36))) : Math.min(246, Math.max(190, Math.round(longestLine * 7.2 + 36)));
+  const nodeHeight = compact ? 90 : 144;
   return {
     ...node,
     data: {
@@ -281,7 +309,7 @@ function toDisplayNode(node) {
       displayLabel: lines.join('\n'),
       nodeWidth,
       nodeHeight,
-      textMaxWidth: Math.max(112, nodeWidth - 18)
+      textMaxWidth: Math.max(124, nodeWidth - 24)
     }
   };
 }
@@ -290,10 +318,10 @@ function toDisplayEdge(edge) {
   const edgeData = edge && typeof edge.data === 'object' ? edge.data : {};
   const relationKey = `${getNodeTypeFromId(edgeData.source)}->${getNodeTypeFromId(edgeData.target)}`;
   const relationLabel = EDGE_TEXT_BY_RELATION[relationKey];
-  const displayLabel = LEGACY_EDGE_LABELS.has(edgeData.label)
+  const fullLabel = LEGACY_EDGE_LABELS.has(edgeData.label)
     ? relationLabel || edgeData.label
     : edgeData.label || relationLabel || 'AWS relationship';
-  return { ...edge, data: { ...edgeData, displayLabel } };
+  return { ...edge, data: { ...edgeData, fullLabel, displayLabel: getLiveEdgeDisplayLabel(fullLabel), visibleLabel: '' } };
 }
 
 function formatDetailValue(value) {
@@ -324,7 +352,9 @@ function Icon({ name, size = 16 }) {
     undo: <><path d="M9 7 4 12l5 5" /><path d="M5 12h8.5a5.5 5.5 0 0 1 5.5 5.5V19" /></>,
     redo: <><path d="m15 7 5 5-5 5" /><path d="M19 12h-8.5A5.5 5.5 0 0 0 5 17.5V19" /></>,
     trash: <><path d="M4.5 7h15M9 7V4.5h6V7M7 7l.8 13h8.4L17 7M10 10.5v6M14 10.5v6" /></>,
-    info: <><circle cx="12" cy="12" r="8.5" /><path d="M12 10.8v5.1M12 7.8h.01" /></>
+    info: <><circle cx="12" cy="12" r="8.5" /><path d="M12 10.8v5.1M12 7.8h.01" /></>,
+    moon: <><path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.6 8.6 0 1 0 20.4 15.2Z" /></>,
+    sun: <><circle cx="12" cy="12" r="3.5" /><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4" /></>
   };
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name] || paths.info}</svg>;
 }
@@ -397,6 +427,8 @@ function PlanningWorkspace({ planning }) {
   const [removalHover, setRemovalHover] = useState(false);
   const [nameDraft, setNameDraft] = useState(planningDocument.name);
   const canvasRef = useRef(null);
+  const canvasZoomRef = useRef(canvasZoom);
+  const canvasPanRef = useRef(canvasPan);
   const importInputRef = useRef(null);
   const nodeInteractionRef = useRef(null);
   const canvasPanInteractionRef = useRef(null);
@@ -405,6 +437,8 @@ function PlanningWorkspace({ planning }) {
   const categoryPickerRef = useRef(null);
   const paletteRef = useRef(null);
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  canvasZoomRef.current = canvasZoom;
+  canvasPanRef.current = canvasPan;
   const categories = ['All', ...new Set(PLANNING_SERVICES.map((service) => service.category))];
   const query = search.trim().toLowerCase();
   const availableServices = PLANNING_SERVICES.filter((service) => (selectedCategory === 'All' || service.category === selectedCategory) && (!query || service.name.toLowerCase().includes(query)));
@@ -451,11 +485,33 @@ function PlanningWorkspace({ planning }) {
   };
 
   const handleCanvasWheel = useCallback((event) => {
-    if (!event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const factor = getWheelZoomFactor(event);
-    setCanvasZoom((zoom) => Math.max(MIN_PLANNING_ZOOM, Math.min(MAX_PLANNING_ZOOM, Number((zoom * factor).toFixed(3)))));
-  }, []);
+    if (factor === 1) return;
+    event.preventDefault();
+    const nextViewport = getZoomedCanvasViewport({
+      zoom: canvasZoomRef.current,
+      pan: canvasPanRef.current,
+      cursor: {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top
+      },
+      factor,
+      minZoom: MIN_PLANNING_ZOOM,
+      maxZoom: MAX_PLANNING_ZOOM,
+      viewport: { width: rect.width, height: rect.height },
+      canvasSize: PLANNING_CANVAS_SIZE
+    });
+    if (nextViewport.zoom === canvasZoomRef.current) return;
+    canvasZoomRef.current = nextViewport.zoom;
+    canvasPanRef.current = nextViewport.pan;
+    setCanvasZoom(Number(nextViewport.zoom.toFixed(3)));
+    setCanvasPan({
+      x: Number(nextViewport.pan.x.toFixed(2)),
+      y: Number(nextViewport.pan.y.toFixed(2))
+    });
+  }, [setCanvasPan, setCanvasZoom]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -475,13 +531,16 @@ function PlanningWorkspace({ planning }) {
 
   useEffect(() => {
     const handleShortcut = (event) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      const zoomIn = event.key === '+' || event.key === '=' || event.code === 'NumpadAdd';
-      const zoomOut = event.key === '-' || event.key === '_' || event.code === 'NumpadSubtract';
-      if (zoomIn || zoomOut || event.key === '0') event.preventDefault();
-      if (zoomIn) setCanvasZoom((zoom) => Math.min(MAX_PLANNING_ZOOM, Number((zoom + 0.1).toFixed(2))));
-      if (zoomOut) setCanvasZoom((zoom) => Math.max(MIN_PLANNING_ZOOM, Number((zoom - 0.1).toFixed(2))));
-      if (event.key === '0') setCanvasZoom(1);
+      const direction = getKeyboardZoomDirection(event);
+      if (direction) {
+        event.preventDefault();
+        setCanvasZoom((zoom) => Math.min(MAX_PLANNING_ZOOM, Math.max(MIN_PLANNING_ZOOM, Number((zoom + direction * 0.1).toFixed(2)))));
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key === '0') {
+        event.preventDefault();
+        setCanvasZoom(DEFAULT_PLANNING_ZOOM);
+      }
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
@@ -775,7 +834,7 @@ function PlanningWorkspace({ planning }) {
         ><Icon name="resizeHorizontal" size={15} /></div>
       </aside>
       <section className={styles.planningCanvasPanel} aria-label="AWS architecture canvas">
-        <div className={styles.planningCanvasTop}><div className={styles.canvasTitle}><Icon name="layers" size={15} /><input aria-label="Architecture name" title="Rename architecture" maxLength={120} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={commitDocumentName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setNameDraft(planningDocument.name); event.currentTarget.blur(); } }} /><small>{feedback?.type === 'info' ? 'Saving' : lastSavedAt ? 'Saved' : 'Draft'}</small></div><div className={styles.canvasMeta}><span className={styles.canvasHint}>{connectionSource ? 'Select two services to create a connection' : 'Drop a service here to add it'}</span><span className={styles.zoomHint}>{Math.round(canvasZoom * 100)}% · Ctrl + scroll</span></div></div>
+        <div className={styles.planningCanvasTop}><div className={styles.canvasTitle}><Icon name="layers" size={15} /><input aria-label="Architecture name" title="Rename architecture" maxLength={120} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={commitDocumentName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setNameDraft(planningDocument.name); event.currentTarget.blur(); } }} /><small>{feedback?.type === 'info' ? 'Saving' : lastSavedAt ? 'Saved' : 'Draft'}</small></div><div className={styles.canvasMeta}><span className={styles.canvasHint}>{connectionSource ? 'Select two services to create a connection' : 'Drop a service here to add it'}</span><span className={styles.zoomHint}>{Math.round(canvasZoom * 100)}% · Scroll to zoom</span></div></div>
         <div className={`${styles.planningCanvas} ${isCanvasPanning ? styles.planningCanvasPanning : ''}`} ref={canvasRef} onPointerDown={beginCanvasPan} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop} onPointerMove={(event) => { moveCanvasPan(event); moveNode(event); }} onPointerUp={(event) => { endCanvasPan(); endNodeInteraction(event); }} onPointerCancel={(event) => { endCanvasPan(); endNodeInteraction(event); }} onClick={handleCanvasClick}>
           <div className={styles.planningCanvasSurface} style={{ '--canvas-zoom': canvasZoom, '--canvas-pan-x': `${canvasPan.x}px`, '--canvas-pan-y': `${canvasPan.y}px` }}>
           <div className={styles.canvasGrid} />
@@ -862,6 +921,13 @@ function PlanningWorkspace({ planning }) {
 
 export default function App() {
   const [showLanding, setShowLanding] = useState(true);
+  const [theme, setTheme] = useState(() => {
+    try {
+      return window.localStorage.getItem('awsome.theme') === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
   const [mode, setMode] = useState('live');
   const [profile, setProfile] = useState('default');
   const [region, setRegion] = useState('ap-southeast-2');
@@ -871,11 +937,14 @@ export default function App() {
   const [topologyStats, setTopologyStats] = useState(null);
   const [topologyGraph, setTopologyGraph] = useState(null);
   const [topologyContext, setTopologyContext] = useState(null);
+  const [snapshotStale, setSnapshotStale] = useState(false);
   const [topologyWarnings, setTopologyWarnings] = useState([]);
   const [resourceCounts, setResourceCounts] = useState({});
   const [liveSearch, setLiveSearch] = useState('');
   const [selectedLiveTypes, setSelectedLiveTypes] = useState([]);
   const [selectedNode, setSelectedNode] = useState(null);
+  const [selectedEdge, setSelectedEdge] = useState(null);
+  const [hoveredEdge, setHoveredEdge] = useState(null);
   const [pendingPlanImport, setPendingPlanImport] = useState(null);
   const [canFetchTopology, setCanFetchTopology] = useState(false);
   const planning = usePlanningDocument(PLANNING_SERVICES);
@@ -883,6 +952,14 @@ export default function App() {
   const cyInstanceRef = useRef(null);
   const liveDragAutoPanRef = useRef(null);
   const liveGraphFitFrameRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('awsome.theme', theme);
+    } catch {
+      // Theme persistence is best effort when browser storage is unavailable.
+    }
+  }, [theme]);
 
   const stopLiveDragAutoPan = useCallback(() => {
     const state = liveDragAutoPanRef.current;
@@ -909,6 +986,7 @@ export default function App() {
   const destroyGraph = useCallback(() => {
     stopLiveDragAutoPan();
     cancelLiveGraphFit();
+    setHoveredEdge(null);
     if (cyInstanceRef.current) {
       cyInstanceRef.current.destroy();
       cyInstanceRef.current = null;
@@ -924,7 +1002,7 @@ export default function App() {
       includeLabels: true,
       includeOverlays: false
     });
-    cy.fit(bounds, 96);
+    cy.fit(bounds, 24);
   }, []);
 
   const adjustLiveZoom = useCallback((factor) => {
@@ -944,6 +1022,28 @@ export default function App() {
       return renderGraph(graph, attempt + 1);
     }
     const cytoscape = (await import('cytoscape')).default;
+    const darkGraph = theme === 'dark';
+    const graphColors = darkGraph
+      ? {
+          nodeBackground: '#16283d',
+          nodeText: '#edf5ff',
+          nodeBorder: '#466580',
+          nodeShadow: '#07111e',
+          edge: '#88a9c4',
+          edgeText: '#c5d7e8',
+          edgeTextBackground: '#102033',
+          edgeTextBorder: '#27435d'
+        }
+      : {
+          nodeBackground: '#ffffff',
+          nodeText: '#162033',
+          nodeBorder: '#b9c7d8',
+          nodeShadow: '#6d7d91',
+          edge: '#8ca3bd',
+          edgeText: '#53657a',
+          edgeTextBackground: '#ffffff',
+          edgeTextBorder: '#e2e8f0'
+        };
     destroyGraph();
     const nodes = Array.isArray(graph?.nodes) ? graph.nodes.map(toDisplayNode) : [];
     const edges = Array.isArray(graph?.edges) ? graph.edges.map(toDisplayEdge) : [];
@@ -951,13 +1051,13 @@ export default function App() {
       container: cyContainerRef.current,
       elements: { nodes, edges },
       style: [
-        { selector: 'node', style: { shape: 'round-rectangle', width: 'data(nodeWidth)', height: 'data(nodeHeight)', 'background-color': '#ffffff', 'background-image': 'data(icon)', 'background-fit': 'none', 'background-width': 34, 'background-height': 34, 'background-position-x': '50%', 'background-position-y': '25%', 'background-repeat': 'no-repeat', 'background-image-opacity': 1, 'background-opacity': 1, label: 'data(displayLabel)', color: '#162033', 'font-size': 12, 'font-weight': 650, 'line-height': 1.5, 'text-wrap': 'wrap', 'text-max-width': 'data(textMaxWidth)', 'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': -38, 'text-justification': 'center', 'border-width': 1.2, 'border-color': '#b9c7d8', 'overlay-opacity': 0, padding: 0, 'shadow-color': '#6d7d91', 'shadow-blur': 5, 'shadow-opacity': 0.12, 'shadow-offset-x': 0, 'shadow-offset-y': 3, 'transition-property': 'border-color, border-width, shadow-blur, shadow-opacity', 'transition-duration': '180ms' } },
-        { selector: 'node.hovered', style: { 'border-color': '#2563eb', 'border-width': 2.4, 'shadow-color': '#60a5fa', 'shadow-blur': 15, 'shadow-opacity': 0.35 } },
-        { selector: 'node[compact = "yes"]', style: { 'text-valign': 'center', 'text-margin-y': 0, 'background-color': '#f8fafc', 'border-color': '#cbd5e1' } },
+        { selector: 'node', style: { shape: 'round-rectangle', width: 'data(nodeWidth)', height: 'data(nodeHeight)', 'background-color': graphColors.nodeBackground, 'background-image': 'data(icon)', 'background-fit': 'none', 'background-width': 48, 'background-height': 48, 'background-position-x': '50%', 'background-position-y': '25%', 'background-repeat': 'no-repeat', 'background-image-opacity': 1, 'background-opacity': 1, label: 'data(displayLabel)', color: graphColors.nodeText, 'font-family': '"Inter Variable", Inter, sans-serif', 'font-size': 15, 'font-weight': 650, 'line-height': 1.35, 'text-wrap': 'wrap', 'text-max-width': 'data(textMaxWidth)', 'text-valign': 'bottom', 'text-halign': 'center', 'text-margin-y': -50, 'text-justification': 'center', 'border-width': 1.2, 'border-color': graphColors.nodeBorder, 'overlay-opacity': 0, padding: 0, 'shadow-color': graphColors.nodeShadow, 'shadow-blur': 5, 'shadow-opacity': darkGraph ? 0.32 : 0.12, 'shadow-offset-x': 0, 'shadow-offset-y': 3, 'transition-property': 'border-color, border-width, shadow-blur, shadow-opacity', 'transition-duration': '180ms' } },
+        { selector: 'node.hovered', style: { 'border-color': '#6fa8e8', 'border-width': 2.4, 'shadow-color': '#60a5fa', 'shadow-blur': 15, 'shadow-opacity': 0.35 } },
+        { selector: 'node[compact = "yes"]', style: { 'text-valign': 'center', 'text-margin-y': 0, 'background-color': darkGraph ? '#1c3047' : '#f8fafc', 'border-color': darkGraph ? '#55748e' : '#cbd5e1' } },
         { selector: 'node.connected-node', style: { 'border-color': '#4f83cc', 'shadow-opacity': 0.27 } },
         { selector: 'node:selected', style: { 'border-color': '#2563eb', 'border-width': 2.6, 'shadow-color': '#60a5fa', 'shadow-blur': 16, 'shadow-opacity': 0.42 } },
-        { selector: 'edge', style: { width: 1.7, 'line-color': '#8ca3bd', 'target-arrow-color': '#8ca3bd', 'target-arrow-shape': 'triangle', 'arrow-scale': 1.05, 'curve-style': 'bezier', 'control-point-step-size': 36, label: 'data(displayLabel)', color: '#53657a', 'font-size': 10, 'font-weight': 620, 'text-rotation': 'autorotate', 'text-margin-y': -7, 'text-background-color': '#ffffff', 'text-background-opacity': 0.88, 'text-background-padding': 2, 'text-border-color': '#e2e8f0', 'text-border-width': 0.5, 'text-border-opacity': 0.8, 'overlay-opacity': 0, 'transition-property': 'line-color, target-arrow-color, width', 'transition-duration': '180ms' } },
-        { selector: 'edge.connected-hover, edge:selected', style: { width: 2.8, 'line-color': '#2563eb', 'target-arrow-color': '#2563eb' } }
+        { selector: 'edge', style: { width: 2, 'line-color': graphColors.edge, 'target-arrow-color': graphColors.edge, 'target-arrow-shape': 'triangle', 'arrow-scale': 1.2, 'curve-style': 'bezier', 'control-point-step-size': 36, label: 'data(visibleLabel)', color: graphColors.edgeText, 'font-family': '"Inter Variable", Inter, sans-serif', 'font-size': 13, 'font-weight': 640, 'text-rotation': 'none', 'text-margin-y': -10, 'text-background-color': graphColors.edgeTextBackground, 'text-background-opacity': 0.92, 'text-background-padding': 3, 'text-border-color': graphColors.edgeTextBorder, 'text-border-width': 0.5, 'text-border-opacity': 0.9, 'overlay-opacity': 0, 'transition-property': 'line-color, target-arrow-color, width', 'transition-duration': '180ms' } },
+        { selector: 'edge.connected-hover, edge:selected', style: { width: 2.8, 'line-color': '#6fa8e8', 'target-arrow-color': '#6fa8e8' } }
       ],
       layout: { name: 'breadthfirst', directed: true, animate: false, fit: false, padding: 86, spacingFactor: 1.6, avoidOverlap: true, nodeDimensionsIncludeLabels: true },
       minZoom: 0.3,
@@ -967,6 +1067,21 @@ export default function App() {
       userPanningEnabled: true
     });
     cyInstanceRef.current = cy;
+    const labelContext = document.createElement('canvas').getContext('2d');
+    if (labelContext) labelContext.font = '640 13px "Inter Variable", Inter, sans-serif';
+    const updateVisibleEdgeLabels = (candidateEdges = cy.edges()) => {
+      cy.batch(() => candidateEdges.forEach((edge) => {
+        const source = edge.sourceEndpoint();
+        const target = edge.targetEndpoint();
+        const distance = Math.hypot(target.x - source.x, target.y - source.y);
+        const caption = edge.data('displayLabel');
+        const width = labelContext?.measureText(caption).width ?? caption.length * 7;
+        const visibleLabel = canShowLiveEdgeLabel(distance, width) ? caption : '';
+        if (edge.data('visibleLabel') !== visibleLabel) edge.data('visibleLabel', visibleLabel);
+      }));
+    };
+    updateVisibleEdgeLabels();
+    cy.on('position', 'node', (event) => updateVisibleEdgeLabels(event.target.connectedEdges()));
     applyZoomedFit();
     liveGraphFitFrameRef.current = window.requestAnimationFrame(() => {
       liveGraphFitFrameRef.current = null;
@@ -1052,10 +1167,17 @@ export default function App() {
       cy.elements('.connected-hover').removeClass('connected-hover');
       cy.elements('.connected-node').removeClass('connected-node');
     });
-    cy.on('mouseover', 'edge', (event) => event.target.addClass('connected-hover'));
-    cy.on('mouseout', 'edge', (event) => event.target.removeClass('connected-hover'));
+    cy.on('mouseover', 'edge', (event) => {
+      event.target.addClass('connected-hover');
+      setHoveredEdge({ id: event.target.id(), label: event.target.data('fullLabel') });
+    });
+    cy.on('mouseout', 'edge', (event) => {
+      event.target.removeClass('connected-hover');
+      setHoveredEdge((current) => current?.id === event.target.id() ? null : current);
+    });
     cy.on('tap', 'node', (event) => {
       const nodeData = event.target.data();
+      setSelectedEdge(null);
       setSelectedNode({
         id: nodeData.id,
         label: nodeData.label,
@@ -1063,8 +1185,23 @@ export default function App() {
         details: nodeData.details && typeof nodeData.details === 'object' ? nodeData.details : {}
       });
     });
-    cy.on('tap', (event) => { if (event.target === cy) setSelectedNode(null); });
-  }, [applyZoomedFit, destroyGraph, stopLiveDragAutoPan]);
+    cy.on('tap', 'edge', (event) => {
+      const edge = event.target;
+      setSelectedNode(null);
+      setSelectedEdge({
+        id: edge.id(),
+        label: edge.data('fullLabel'),
+        source: edge.source().data('label') || getResourceId(edge.source().id()),
+        target: edge.target().data('label') || getResourceId(edge.target().id())
+      });
+    });
+    cy.on('tap', (event) => {
+      if (event.target === cy) {
+        setSelectedNode(null);
+        setSelectedEdge(null);
+      }
+    });
+  }, [applyZoomedFit, destroyGraph, stopLiveDragAutoPan, theme]);
 
   const filteredTopologyGraph = useMemo(
     () => filterLiveTopologyGraph(topologyGraph, { query: liveSearch, selectedTypes: selectedLiveTypes }),
@@ -1074,8 +1211,8 @@ export default function App() {
 
   useEffect(() => {
     if (mode !== 'live') {
-      destroyGraph();
-      return undefined;
+      const teardownTimer = window.setTimeout(destroyGraph, 180);
+      return () => window.clearTimeout(teardownTimer);
     }
     if (!topologyGraph) return undefined;
     const renderTimer = window.setTimeout(() => { renderGraph(filteredTopologyGraph).catch(() => {}); }, 0);
@@ -1089,12 +1226,17 @@ export default function App() {
   }, [filteredTopologyGraph, selectedNode]);
 
   useEffect(() => {
+    if (!selectedEdge) return;
+    const visible = filteredTopologyGraph.edges.some((edge) => edge?.data?.id === selectedEdge.id);
+    if (!visible) setSelectedEdge(null);
+  }, [filteredTopologyGraph, selectedEdge]);
+
+  useEffect(() => {
     const handleShortcut = (event) => {
-      if (mode !== 'live' || (!event.ctrlKey && !event.metaKey)) return;
-      const zoomIn = event.key === '+' || event.key === '=' || event.code === 'NumpadAdd';
-      const zoomOut = event.key === '-' || event.key === '_' || event.code === 'NumpadSubtract';
-      if (zoomIn && adjustLiveZoom(1.18)) event.preventDefault();
-      if (zoomOut && adjustLiveZoom(1 / 1.18)) event.preventDefault();
+      if (mode !== 'live') return;
+      const direction = getKeyboardZoomDirection(event);
+      if (direction > 0 && adjustLiveZoom(1.18)) event.preventDefault();
+      if (direction < 0 && adjustLiveZoom(1 / 1.18)) event.preventDefault();
       if (event.key === '0' && cyInstanceRef.current) {
         event.preventDefault();
         applyZoomedFit();
@@ -1112,7 +1254,9 @@ export default function App() {
     }
     setError('');
     setLoading(true);
+    if (topologyGraph) setSnapshotStale(true);
     setSelectedNode(null);
+    setSelectedEdge(null);
     setStatus(isRefresh ? 'Refreshing topology from AWS...' : 'Loading topology from AWS...');
     try {
       const graph = await invoke('fetch_topology', { profile, region });
@@ -1123,8 +1267,10 @@ export default function App() {
       setTopologyWarnings(warnings);
       setTopologyContext({
         profile: profile.trim() || 'default',
-        region: region.trim() || 'me-south-1'
+        region: region.trim() || 'me-south-1',
+        loadedAt: new Date().toISOString()
       });
+      setSnapshotStale(false);
       const nodes = Array.isArray(graph?.nodes) ? graph.nodes.length : 0;
       const edges = Array.isArray(graph?.edges) ? graph.edges.length : 0;
       const counts = (Array.isArray(graph?.nodes) ? graph.nodes : []).reduce((result, node) => {
@@ -1140,11 +1286,18 @@ export default function App() {
     } catch (err) {
       const message = err?.message || String(err);
       setError(`Failed to load topology: ${message}`);
-      setStatus('Failed to load topology. Review error details above.');
+      setStatus(topologyGraph
+        ? 'Failed to load topology. The previous snapshot remains visible.'
+        : 'Failed to load topology. Review error details above.');
     } finally {
       setLoading(false);
     }
-  }, [profile, region, renderGraph]);
+  }, [profile, region, topologyGraph]);
+
+  const switchMode = useCallback((nextMode) => {
+    if (nextMode === mode) return;
+    startTransition(() => setMode(nextMode));
+  }, [mode]);
 
   const openTopologyInPlanning = useCallback(() => {
     if (!topologyGraph || !topologyContext) return;
@@ -1155,17 +1308,17 @@ export default function App() {
     }
     planning.setNodes(importedPlan.nodes);
     planning.setEdges(importedPlan.edges);
-    planning.setCanvasZoom(1);
+    planning.setCanvasZoom(DEFAULT_PLANNING_ZOOM);
     planning.setCanvasPan({ x: 0, y: 0 });
-    setMode('planning');
-  }, [planning, topologyContext, topologyGraph]);
+    switchMode('planning');
+  }, [planning, switchMode, topologyContext, topologyGraph]);
 
   const finishPlanImport = useCallback((choice) => {
     if (!pendingPlanImport) return;
     if (choice === 'replace') {
       planning.setNodes(pendingPlanImport.nodes);
       planning.setEdges(pendingPlanImport.edges);
-      planning.setCanvasZoom(1);
+      planning.setCanvasZoom(DEFAULT_PLANNING_ZOOM);
       planning.setCanvasPan({ x: 0, y: 0 });
     }
     if (choice === 'append') {
@@ -1177,8 +1330,8 @@ export default function App() {
       planning.setEdges(merged.edges);
     }
     setPendingPlanImport(null);
-    if (choice !== 'cancel') setMode('planning');
-  }, [pendingPlanImport, planning]);
+    if (choice !== 'cancel') switchMode('planning');
+  }, [pendingPlanImport, planning, switchMode]);
 
   const selectedService = selectedNode ? SERVICE_MAP[selectedNode.type] || { heading: 'AWS Resource', fallbackColor: '#6b8fca' } : null;
   const activeLegendItems = Object.keys(SERVICE_MAP).filter((type) => resourceCounts[type] > 0);
@@ -1197,13 +1350,14 @@ export default function App() {
 
   if (showLanding) return <Landing onComplete={() => setShowLanding(false)} />;
 
-  return <main className={styles.appShell}>
+  return <main className={styles.appShell} data-theme={theme}>
     <section className={styles.mainView}>
       <header className={styles.topbar}>
-        <div className={styles.brandLockup}><span className={styles.brandMark}><Icon name="network" size={17} /></span><div><span className={styles.brandName}>awsome</span><span className={styles.brandCaption}>AWS topology explorer</span></div></div>
-        <nav className={styles.modeSwitch} aria-label="Workspace mode"><button type="button" className={mode === 'live' ? styles.modeActive : ''} onClick={() => setMode('live')}><i />Live mode</button><button type="button" className={mode === 'planning' ? styles.modeActive : ''} onClick={() => setMode('planning')}><Icon name="grid" size={14} />Planning mode</button></nav>
-        <div className={styles.topbarMeta}><span className={`${styles.connectionState} ${canFetchTopology ? styles.connectionReady : styles.connectionOffline}`}><i /> {canFetchTopology ? 'Native backend ready' : 'Tauri backend unavailable'}</span></div>
+        <div className={styles.brandLockup}><span className={styles.brandMark}><img src={logo} alt="" aria-hidden="true" draggable="false" /></span><div><span className={styles.brandName}>awsome</span><span className={styles.brandCaption}>AWS topology explorer</span></div></div>
+        <nav className={styles.modeSwitch} aria-label="Workspace mode"><button type="button" className={mode === 'live' ? styles.modeActive : ''} onClick={() => switchMode('live')}><i />Live mode</button><button type="button" className={mode === 'planning' ? styles.modeActive : ''} onClick={() => switchMode('planning')}><Icon name="grid" size={14} />Planning mode</button></nav>
+        <div className={styles.topbarMeta}><button type="button" className={styles.themeToggle} aria-pressed={theme === 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={17} /><span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span></button><span className={`${styles.connectionState} ${canFetchTopology ? styles.connectionReady : styles.connectionOffline}`}><i /> {canFetchTopology ? 'Native backend ready' : 'Tauri backend unavailable'}</span></div>
       </header>
+      <div key={mode} className={styles.modeStage}>
       {mode === 'planning' ? <PlanningWorkspace planning={planning} /> : <>
       <div className={styles.toolbarCard}>
         <div className={styles.sourceLabel}><Icon name="database" size={15} /><span>Data source</span></div>
@@ -1217,36 +1371,39 @@ export default function App() {
         </div>
       </div>
       {error ? <div className={styles.errorBanner} role="alert"><Icon name="info" size={17} /><div><strong>Could not load topology</strong><p>{error.replace('Failed to load topology: ', '')}</p></div></div> : null}
-      {topologyWarnings.length ? <section className={styles.warningBanner} role="status" aria-live="polite" aria-label="Incomplete AWS inventory warnings"><Icon name="info" size={17} /><div><strong>Topology loaded with incomplete inventory</strong><p>Some AWS resources could not be read. The displayed topology includes all successfully discovered resources.</p><ul>{topologyWarnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></section> : null}
-      <div className={styles.workspaceMeta}><div><strong>Topology</strong><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connections` : 'No topology loaded'}</span></div><div className={styles.status} role="status"><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</div></div>
+      {snapshotStale && !loading && topologyContext ? <div className={styles.warningBanner} role="status"><Icon name="info" size={17} /><div><strong>Showing a previous snapshot</strong><p>The latest load failed. This graph still shows {topologyContext.profile} in {topologyContext.region} from {new Date(topologyContext.loadedAt).toLocaleString()}.</p></div></div> : null}
+      {topologyWarnings.length ? <section className={styles.warningBanner} role="status" aria-live="polite" aria-label="Incomplete AWS inventory warnings"><Icon name="info" size={17} /><div><strong>{snapshotStale ? 'Previous snapshot had incomplete inventory' : 'Topology loaded with incomplete inventory'}</strong><p>Some AWS resources could not be read. The displayed topology includes all successfully discovered resources.</p><ul>{topologyWarnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></section> : null}
+      <div className={styles.workspaceMeta}><div><strong>{snapshotStale && !loading ? 'Previous snapshot' : 'Topology'}</strong><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connections` : 'No topology loaded'}{topologyContext ? ` · ${topologyContext.profile} / ${topologyContext.region} · loaded ${new Date(topologyContext.loadedAt).toLocaleString()}` : ''}</span></div><div className={styles.status} role="status"><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</div></div>
       <div className={styles.workspace}>
         <section className={styles.graphPanel} aria-label="AWS topology graph">
           <div className={styles.canvasTools}><div className={styles.legend} aria-label="Filter topology by resource type">{activeLegendItems.map((type) => <button key={type} type="button" className={selectedLiveTypes.length && !selectedLiveTypes.includes(type) ? styles.legendFilterInactive : ''} aria-pressed={!selectedLiveTypes.length || selectedLiveTypes.includes(type)} onClick={() => toggleLiveResourceType(type)} title={`Show only ${SERVICE_MAP[type].heading} resources`}><i style={{ backgroundColor: SERVICE_MAP[type].fallbackColor }} />{SERVICE_MAP[type].heading}</button>)}</div><button className={styles.iconButton} type="button" onClick={applyZoomedFit} aria-label="Fit topology to view" title="Fit topology to view"><Icon name="fit" size={16} /></button></div>
           {!topologyStats && !loading ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="cloud" size={26} /></span><h1>Map your AWS infrastructure</h1><p>Choose a local AWS profile and region, then load the live resource relationships.</p><button className={styles.primaryBtn} type="button" onClick={() => fetchTopology(false)}><Icon name="network" size={15} /> Load topology</button></div> : null}
-          {topologyStats && !loading && !filteredTopologyGraph.nodes.length ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="search" size={26} /></span><h1>No matching resources</h1><p>Adjust the search or resource-type filters to see more of this topology.</p><button className={styles.secondaryBtn} type="button" onClick={clearLiveFilters}>Clear filters</button></div> : null}
+          {topologyStats && !loading && !filteredTopologyGraph.nodes.length ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="search" size={26} /></span><h1>{hasLiveFilters ? 'No matching resources' : 'No resources found'}</h1><p>{hasLiveFilters ? 'Adjust the search or resource-type filters to see more of this topology.' : 'The selected region has no discovered resources in the supported inventory.'}</p>{hasLiveFilters ? <button className={styles.secondaryBtn} type="button" onClick={clearLiveFilters}>Clear filters</button> : null}</div> : null}
           {loading ? <div className={styles.loadingOverlay}><span className={styles.loadingPulse} /> Syncing resources from AWS</div> : null}
           <div
             ref={cyContainerRef}
             className={`${styles.cy} ${topologyGraph ? styles.cyInteractive : ''}`}
             title={topologyGraph ? 'Drag empty canvas space to move around the topology' : undefined}
           />
+          {hoveredEdge ? <div className={styles.edgeHint}><strong>Relationship</strong><span>{hoveredEdge.label}</span></div> : null}
         </section>
-        <aside className={styles.inspector} aria-label="Resource details">
-          {selectedNode ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: selectedService.fallbackColor }} />{selectedService.heading}</div><button className={styles.closeButton} type="button" onClick={() => setSelectedNode(null)} aria-label="Close resource details"><Icon name="close" size={15} /></button></div><h2>{selectedNode.label || getResourceId(selectedNode.id)}</h2><dl className={styles.detailsList}><div><dt>Resource ID</dt><dd>{getResourceId(selectedNode.id)}</dd></div><div><dt>Resource type</dt><dd>{selectedService.heading}</dd></div>{Object.entries(selectedNode.details || {}).filter(([, value]) => value !== null && value !== undefined && value !== '').map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{formatDetailValue(value)}</dd></div>)}<div><dt>Region</dt><dd>{region}</dd></div><div><dt>Profile</dt><dd>{profile || 'default'}</dd></div></dl></> : <div className={styles.inspectorEmpty}><span><Icon name="info" size={20} /></span><h2>Resource details</h2><p>Select a node in the topology to inspect its identity and placement.</p></div>}
+        <aside className={styles.inspector} aria-label="Topology details">
+          {selectedNode ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: selectedService.fallbackColor }} />{selectedService.heading}</div><button className={styles.closeButton} type="button" onClick={() => setSelectedNode(null)} aria-label="Close resource details"><Icon name="close" size={15} /></button></div><h2>{selectedNode.label || getResourceId(selectedNode.id)}</h2><dl className={styles.detailsList}><div><dt>Resource ID</dt><dd>{getResourceId(selectedNode.id)}</dd></div><div><dt>Resource type</dt><dd>{selectedService.heading}</dd></div>{Object.entries(selectedNode.details || {}).filter(([, value]) => value !== null && value !== undefined && value !== '').map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{formatDetailValue(value)}</dd></div>)}<div><dt>Region</dt><dd>{topologyContext?.region || 'unknown'}</dd></div><div><dt>Profile</dt><dd>{topologyContext?.profile || 'unknown'}</dd></div></dl></> : selectedEdge ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: '#4f83cc' }} />Relationship</div><button className={styles.closeButton} type="button" onClick={() => setSelectedEdge(null)} aria-label="Close relationship details"><Icon name="close" size={15} /></button></div><h2>{selectedEdge.label}</h2><dl className={styles.detailsList}><div><dt>From</dt><dd>{selectedEdge.source}</dd></div><div><dt>To</dt><dd>{selectedEdge.target}</dd></div></dl></> : <div className={styles.inspectorEmpty}><span><Icon name="info" size={20} /></span><h2>Topology details</h2><p>Select a node or connection to inspect its full details.</p></div>}
         </aside>
       </div>
       </>}
+      </div>
       {pendingPlanImport ? <div className={styles.dialogBackdrop} role="presentation">
         <section className={styles.importDialog} role="dialog" aria-modal="true" aria-labelledby="import-plan-title">
           <span className={styles.dialogIcon}><Icon name="layers" size={20} /></span>
           <h2 id="import-plan-title">Planning canvas already has work</h2>
-          <p>Choose how to use this live snapshot. Append keeps existing work and skips resources already imported; replace starts a new plan from the snapshot.</p>
+          <p>Choose how to add this live snapshot to your plan.</p>
           <div className={styles.importSummary}><span>{pendingPlanImport.nodes.length} resources</span><span>{pendingPlanImport.edges.length} relationships</span></div>
-          <div className={styles.dialogActions}>
-            <button className={styles.secondaryBtn} type="button" onClick={() => finishPlanImport('cancel')}>Cancel</button>
-            <button className={styles.secondaryBtn} type="button" onClick={() => finishPlanImport('append')}>Append without duplicates</button>
-            <button className={styles.primaryBtn} type="button" onClick={() => finishPlanImport('replace')}>Replace planning canvas</button>
+          <div className={styles.importChoices}>
+            <button className={styles.importChoice} type="button" onClick={() => finishPlanImport('append')}><strong>Append to canvas</strong><span>Keep your work and add resources that are not already in the plan.</span></button>
+            <button className={`${styles.importChoice} ${styles.importChoicePrimary}`} type="button" onClick={() => finishPlanImport('replace')}><strong>Replace canvas</strong><span>Start a new plan using this snapshot.</span></button>
           </div>
+          <div className={styles.dialogActions}><button className={styles.secondaryBtn} type="button" onClick={() => finishPlanImport('cancel')}>Cancel</button></div>
         </section>
       </div> : null}
     </section>

@@ -9,7 +9,8 @@ use aws_sdk_ec2::{
 };
 use aws_sdk_elasticloadbalancingv2::{
     types::{
-        LoadBalancer, LoadBalancerTypeEnum, TargetGroup, TargetHealthDescription, TargetTypeEnum,
+        Action, ActionTypeEnum, Listener, LoadBalancer, LoadBalancerTypeEnum, Rule, RuleCondition,
+        TargetGroup, TargetHealthDescription, TargetTypeEnum,
     },
     Client as Elbv2Client,
 };
@@ -72,6 +73,8 @@ struct Inventory {
     transit_gateway_route_tables: Vec<TransitGatewayRouteTable>,
     transit_gateway_routes: BTreeMap<String, Vec<TransitGatewayRoute>>,
     load_balancers: Vec<LoadBalancer>,
+    listeners: Vec<Listener>,
+    listener_rules: BTreeMap<String, Vec<Rule>>,
     target_groups: Vec<TargetGroup>,
     target_health: BTreeMap<String, Vec<TargetHealthDescription>>,
 }
@@ -150,6 +153,16 @@ fn retain_inventory<T: Default>(
             T::default()
         }
     }
+}
+
+fn require_inventory_success(failures: &[bool], first_error: &str) -> Result<(), String> {
+    if !failures.is_empty() && failures.iter().all(|failed| *failed) {
+        return Err(format!(
+            "All {} AWS inventory requests failed. Check the profile, region, credentials, and read permissions. First error: {first_error}",
+            failures.len()
+        ));
+    }
+    Ok(())
 }
 
 fn name_tag(tags: &[Tag]) -> Option<String> {
@@ -499,6 +512,115 @@ async fn list_target_groups(client: &Elbv2Client) -> Result<Vec<TargetGroup>, St
         ))
     })
     .await
+}
+
+async fn list_listeners(
+    client: &Elbv2Client,
+    load_balancers: &[LoadBalancer],
+) -> Result<(Vec<Listener>, Vec<String>), String> {
+    const MAX_CONCURRENT_REQUESTS: usize = 8;
+    let mut arns = load_balancers
+        .iter()
+        .filter(|load_balancer| load_balancer_resource_type(load_balancer).is_some())
+        .filter_map(|load_balancer| load_balancer.load_balancer_arn())
+        .map(str::to_owned);
+    let mut requests = tokio::task::JoinSet::new();
+    for _ in 0..MAX_CONCURRENT_REQUESTS {
+        let Some(arn) = arns.next() else { break };
+        spawn_listener_request(&mut requests, client.clone(), arn);
+    }
+
+    let mut listeners = Vec::new();
+    let mut warnings = Vec::new();
+    while let Some(result) = requests.join_next().await {
+        match result.map_err(|error| format!("ELBv2 listener inventory task failed: {error}"))? {
+            Ok(mut found) => listeners.append(&mut found),
+            Err(error) => warnings.push(format!(
+                "ELBv2 listeners are unavailable for one load balancer; its routing paths may be incomplete. {error}"
+            )),
+        }
+        if let Some(arn) = arns.next() {
+            spawn_listener_request(&mut requests, client.clone(), arn);
+        }
+    }
+    Ok((listeners, warnings))
+}
+
+fn spawn_listener_request(
+    requests: &mut tokio::task::JoinSet<Result<Vec<Listener>, String>>,
+    client: Elbv2Client,
+    load_balancer_arn: String,
+) {
+    requests.spawn(async move {
+        paginate(|marker| async {
+            let page = client
+                .describe_listeners()
+                .load_balancer_arn(&load_balancer_arn)
+                .set_marker(marker)
+                .send()
+                .await
+                .map_err(|error| {
+                    format!("could not list listeners for {load_balancer_arn}: {error}")
+                })?;
+            Ok((
+                page.listeners().to_vec(),
+                page.next_marker().map(str::to_owned),
+            ))
+        })
+        .await
+    });
+}
+
+async fn list_listener_rules(
+    client: &Elbv2Client,
+    listeners: &[Listener],
+) -> Result<(BTreeMap<String, Vec<Rule>>, Vec<String>), String> {
+    const MAX_CONCURRENT_REQUESTS: usize = 8;
+    let mut arns = listeners
+        .iter()
+        .filter_map(|listener| listener.listener_arn())
+        .map(str::to_owned);
+    let mut requests = tokio::task::JoinSet::new();
+    for _ in 0..MAX_CONCURRENT_REQUESTS {
+        let Some(arn) = arns.next() else { break };
+        spawn_rule_request(&mut requests, client.clone(), arn);
+    }
+
+    let mut rules = BTreeMap::new();
+    let mut warnings = Vec::new();
+    while let Some(result) = requests.join_next().await {
+        match result.map_err(|error| format!("ELBv2 rule inventory task failed: {error}"))? {
+            Ok((arn, found)) => { rules.insert(arn, found); }
+            Err(error) => warnings.push(format!(
+                "ELBv2 rules are unavailable for one listener; custom routing paths may be incomplete. {error}"
+            )),
+        }
+        if let Some(arn) = arns.next() {
+            spawn_rule_request(&mut requests, client.clone(), arn);
+        }
+    }
+    Ok((rules, warnings))
+}
+
+fn spawn_rule_request(
+    requests: &mut tokio::task::JoinSet<Result<(String, Vec<Rule>), String>>,
+    client: Elbv2Client,
+    listener_arn: String,
+) {
+    requests.spawn(async move {
+        let rules = paginate(|marker| async {
+            let page = client
+                .describe_rules()
+                .listener_arn(&listener_arn)
+                .set_marker(marker)
+                .send()
+                .await
+                .map_err(|error| format!("could not list rules for {listener_arn}: {error}"))?;
+            Ok((page.rules().to_vec(), page.next_marker().map(str::to_owned)))
+        })
+        .await?;
+        Ok((listener_arn, rules))
+    });
 }
 
 async fn list_target_health(
@@ -1076,6 +1198,71 @@ fn build_graph(inventory: Inventory) -> Graph {
         );
     }
 
+    for listener in &inventory.listeners {
+        let Some(arn) = listener.listener_arn() else {
+            continue;
+        };
+        let label = match (listener.protocol(), listener.port()) {
+            (Some(protocol), Some(port)) => format!("{}:{port}", protocol.as_str()),
+            (Some(protocol), None) => protocol.as_str().to_owned(),
+            (None, Some(port)) => format!("Port {port}"),
+            (None, None) => "Listener".to_owned(),
+        };
+        graph.add_node(
+            listener_node_id(arn),
+            label,
+            "listener",
+            details([
+                (
+                    "Protocol",
+                    listener.protocol().map(|value| value.as_str().to_owned()),
+                ),
+                ("Port", listener.port().map(|value| value.to_string())),
+                (
+                    "Load balancer",
+                    listener.load_balancer_arn().map(str::to_owned),
+                ),
+                ("ARN", Some(arn.to_owned())),
+            ]),
+        );
+        if !listener.default_actions().is_empty() {
+            graph.add_node(
+                default_rule_node_id(arn),
+                "Default rule",
+                "listener_rule",
+                details([
+                    ("Priority", Some("default".to_owned())),
+                    ("Actions", Some(action_summary(listener.default_actions()))),
+                    ("Listener", Some(arn.to_owned())),
+                ]),
+            );
+        }
+        for rule in inventory.listener_rules.get(arn).into_iter().flatten() {
+            if rule.is_default() == Some(true) {
+                continue;
+            }
+            let Some(rule_arn) = rule.rule_arn() else {
+                continue;
+            };
+            let priority = rule.priority().unwrap_or("unknown");
+            graph.add_node(
+                listener_rule_node_id(rule_arn),
+                format!("Rule {priority}"),
+                "listener_rule",
+                details([
+                    ("Priority", Some(priority.to_owned())),
+                    (
+                        "Conditions",
+                        Some(rule_conditions_summary(rule.conditions())),
+                    ),
+                    ("Actions", Some(action_summary(rule.actions()))),
+                    ("Listener", Some(arn.to_owned())),
+                    ("ARN", Some(rule_arn.to_owned())),
+                ]),
+            );
+        }
+    }
+
     add_inventory_edges(&mut graph, &inventory);
     graph.finish()
 }
@@ -1428,19 +1615,6 @@ fn add_load_balancer_target_topology(graph: &mut GraphBuilder, inventory: &Inven
             );
         }
 
-        for load_balancer_arn in target_group.load_balancer_arns() {
-            let Some(load_balancer_node) = load_balancer_nodes.get(load_balancer_arn.as_str())
-            else {
-                continue;
-            };
-            graph.add_edge(
-                format!("edge-load-balancer-target-group-{load_balancer_node}-{target_group_arn}"),
-                load_balancer_node.clone(),
-                target_group_node.clone(),
-                target_group_routing_label(target_group),
-            );
-        }
-
         for (index, description) in inventory
             .target_health
             .get(target_group_arn)
@@ -1478,10 +1652,184 @@ fn add_load_balancer_target_topology(graph: &mut GraphBuilder, inventory: &Inven
             );
         }
     }
+
+    for listener in &inventory.listeners {
+        let (Some(listener_arn), Some(load_balancer_arn)) =
+            (listener.listener_arn(), listener.load_balancer_arn())
+        else {
+            continue;
+        };
+        let Some(load_balancer_node) = load_balancer_nodes.get(load_balancer_arn) else {
+            continue;
+        };
+        let listener_node = listener_node_id(listener_arn);
+        graph.add_edge(
+            format!("edge-load-balancer-listener-{listener_arn}"),
+            load_balancer_node.clone(),
+            listener_node.clone(),
+            "accepts traffic on listener",
+        );
+        if !listener.default_actions().is_empty() {
+            let rule_node = default_rule_node_id(listener_arn);
+            graph.add_edge(
+                format!("edge-listener-default-rule-{listener_arn}"),
+                listener_node.clone(),
+                rule_node.clone(),
+                "uses default rule",
+            );
+            add_rule_target_edges(graph, &rule_node, listener.default_actions());
+        }
+        for rule in inventory
+            .listener_rules
+            .get(listener_arn)
+            .into_iter()
+            .flatten()
+        {
+            if rule.is_default() == Some(true) {
+                continue;
+            }
+            let Some(rule_arn) = rule.rule_arn() else {
+                continue;
+            };
+            let rule_node = listener_rule_node_id(rule_arn);
+            graph.add_edge(
+                format!("edge-listener-rule-{rule_arn}"),
+                listener_node.clone(),
+                rule_node.clone(),
+                format!(
+                    "evaluates priority {}",
+                    rule.priority().unwrap_or("unknown")
+                ),
+            );
+            add_rule_target_edges(graph, &rule_node, rule.actions());
+        }
+    }
 }
 
 fn target_group_node_id(target_group_arn: &str) -> String {
     format!("target_group-{target_group_arn}")
+}
+
+fn listener_node_id(arn: &str) -> String {
+    format!("listener-{arn}")
+}
+
+fn listener_rule_node_id(arn: &str) -> String {
+    format!("listener_rule-{arn}")
+}
+
+fn default_rule_node_id(listener_arn: &str) -> String {
+    format!("listener_rule-default-{listener_arn}")
+}
+
+fn action_summary(actions: &[Action]) -> String {
+    actions
+        .iter()
+        .filter_map(|action| action.r#type().map(|kind| kind.as_str()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn rule_conditions_summary(conditions: &[RuleCondition]) -> String {
+    if conditions.is_empty() {
+        return "All requests".to_owned();
+    }
+    conditions
+        .iter()
+        .map(|condition| {
+            let field = condition.field().unwrap_or("condition");
+            let mut values = condition.values().to_vec();
+            values.extend(
+                condition
+                    .regex_values()
+                    .iter()
+                    .map(|value| format!("regex {value}")),
+            );
+            if let Some(config) = condition.host_header_config() {
+                values.extend(config.values().iter().cloned());
+                values.extend(
+                    config
+                        .regex_values()
+                        .iter()
+                        .map(|value| format!("regex {value}")),
+                );
+            }
+            if let Some(config) = condition.path_pattern_config() {
+                values.extend(config.values().iter().cloned());
+                values.extend(
+                    config
+                        .regex_values()
+                        .iter()
+                        .map(|value| format!("regex {value}")),
+                );
+            }
+            if let Some(config) = condition.http_header_config() {
+                values.extend(config.values().iter().cloned());
+                values.extend(
+                    config
+                        .regex_values()
+                        .iter()
+                        .map(|value| format!("regex {value}")),
+                );
+            }
+            if let Some(config) = condition.query_string_config() {
+                values.extend(config.values().iter().map(|pair| match pair.key() {
+                    Some(key) => format!("{key}={}", pair.value().unwrap_or("")),
+                    None => pair.value().unwrap_or("").to_owned(),
+                }));
+            }
+            if let Some(config) = condition.http_request_method_config() {
+                values.extend(config.values().iter().cloned());
+            }
+            if let Some(config) = condition.source_ip_config() {
+                values.extend(config.values().iter().cloned());
+            }
+            values.sort();
+            values.dedup();
+            let field = condition
+                .http_header_config()
+                .and_then(|config| config.http_header_name())
+                .map(|header| format!("{field} ({header})"))
+                .unwrap_or_else(|| field.to_owned());
+            if values.is_empty() {
+                field
+            } else {
+                format!("{field}: {}", values.join(", "))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn add_rule_target_edges(graph: &mut GraphBuilder, rule_node: &str, actions: &[Action]) {
+    for action in actions {
+        if !matches!(action.r#type(), Some(ActionTypeEnum::Forward)) {
+            continue;
+        }
+        let mut target_groups = BTreeMap::new();
+        if let Some(arn) = action.target_group_arn() {
+            target_groups.insert(arn.to_owned(), None);
+        }
+        if let Some(config) = action.forward_config() {
+            for group in config.target_groups() {
+                if let Some(arn) = group.target_group_arn() {
+                    target_groups.insert(arn.to_owned(), group.weight());
+                }
+            }
+        }
+        for (arn, weight) in target_groups {
+            graph.add_edge(
+                format!("edge-rule-target-group-{rule_node}-{arn}"),
+                rule_node.to_owned(),
+                target_group_node_id(&arn),
+                match weight {
+                    Some(0) => "configured target group (weight 0; no traffic)".to_owned(),
+                    Some(value) => format!("forwards to target group (weight {value})"),
+                    None => "forwards to target group".to_owned(),
+                },
+            );
+        }
+    }
 }
 
 fn target_registration_type(
@@ -1510,21 +1858,6 @@ fn target_registration_node_id(
         "{resource_type}-{target_group_arn}-{target_id}-{}-{index}",
         port.map_or_else(|| "default".to_owned(), |port| port.to_string())
     )
-}
-
-fn target_group_routing_label(target_group: &TargetGroup) -> String {
-    let mut attributes = Vec::new();
-    if let Some(protocol) = target_group.protocol() {
-        attributes.push(protocol.as_str().to_owned());
-    }
-    if let Some(port) = target_group.port() {
-        attributes.push(port.to_string());
-    }
-    if attributes.is_empty() {
-        "routes to target group".to_owned()
-    } else {
-        format!("routes to target group ({})", attributes.join(":"))
-    }
 }
 
 fn target_registration_details(
@@ -1792,6 +2125,32 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         list_target_groups(&elbv2),
     );
 
+    require_inventory_success(
+        &[
+            vpcs_result.is_err(),
+            subnets_result.is_err(),
+            instances_result.is_err(),
+            security_groups_result.is_err(),
+            rds_instances_result.is_err(),
+            internet_gateways_result.is_err(),
+            nat_gateways_result.is_err(),
+            route_tables_result.is_err(),
+            vpc_endpoints_result.is_err(),
+            vpc_peering_connections_result.is_err(),
+            egress_only_internet_gateways_result.is_err(),
+            transit_gateways_result.is_err(),
+            transit_gateway_attachments_result.is_err(),
+            transit_gateway_route_tables_result.is_err(),
+            load_balancers_result.is_err(),
+            target_groups_result.is_err(),
+        ],
+        vpcs_result
+            .as_ref()
+            .err()
+            .map(String::as_str)
+            .unwrap_or("AWS inventory unavailable"),
+    )?;
+
     let mut warnings = Vec::new();
     let vpcs = retain_inventory("VPC", vpcs_result, &mut warnings);
     let subnets = retain_inventory("subnet", subnets_result, &mut warnings);
@@ -1829,13 +2188,26 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         retain_inventory("ELBv2 load balancer", load_balancers_result, &mut warnings);
     let target_groups = retain_inventory("ELBv2 target group", target_groups_result, &mut warnings);
 
-    let (target_health, target_health_warnings) = list_target_health(&elbv2, &target_groups)
+    let (
+        listeners_result,
+        target_health_result,
+        (transit_gateway_routes, transit_gateway_route_warnings),
+    ) = tokio::join!(
+        list_listeners(&elbv2, &load_balancers),
+        list_target_health(&elbv2, &target_groups),
+        list_transit_gateway_routes(&ec2, &transit_gateway_route_tables),
+    );
+    let (listeners, listener_warnings) =
+        listeners_result.map_err(|error| format!("AWS inventory request failed: {error}"))?;
+    warnings.extend(listener_warnings);
+    let (target_health, target_health_warnings) =
+        target_health_result.map_err(|error| format!("AWS inventory request failed: {error}"))?;
+    warnings.extend(target_health_warnings);
+    warnings.extend(transit_gateway_route_warnings);
+    let (listener_rules, rule_warnings) = list_listener_rules(&elbv2, &listeners)
         .await
         .map_err(|error| format!("AWS inventory request failed: {error}"))?;
-    warnings.extend(target_health_warnings);
-    let (transit_gateway_routes, transit_gateway_route_warnings) =
-        list_transit_gateway_routes(&ec2, &transit_gateway_route_tables).await;
-    warnings.extend(transit_gateway_route_warnings);
+    warnings.extend(rule_warnings);
 
     let mut graph = build_graph(Inventory {
         vpcs,
@@ -1854,6 +2226,8 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         transit_gateway_route_tables,
         transit_gateway_routes,
         load_balancers,
+        listeners,
+        listener_rules,
         target_groups,
         target_health,
     });
@@ -1870,8 +2244,8 @@ mod tests {
         VpcEndpointType, VpcPeeringConnectionVpcInfo,
     };
     use aws_sdk_elasticloadbalancingv2::types::{
-        AvailabilityZone, ProtocolEnum, TargetDescription, TargetHealth, TargetHealthReasonEnum,
-        TargetHealthStateEnum,
+        AvailabilityZone, ForwardActionConfig, ProtocolEnum, TargetDescription, TargetGroupTuple,
+        TargetHealth, TargetHealthReasonEnum, TargetHealthStateEnum,
     };
     use std::{cell::RefCell, collections::VecDeque, future::ready};
 
@@ -1943,6 +2317,16 @@ mod tests {
 
         assert_eq!(inventory, vec![1, 2]);
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn all_inventory_failures_are_an_error_but_partial_failure_is_allowed() {
+        let error = require_inventory_success(&[true, true, true], "AccessDenied")
+            .expect_err("an entirely unreadable account is not an empty topology");
+        assert!(error.contains("All 3 AWS inventory requests failed"));
+        assert!(error.contains("AccessDenied"));
+        assert!(require_inventory_success(&[true, false, true], "AccessDenied").is_ok());
+        assert!(require_inventory_success(&[false, false], "").is_ok());
     }
 
     #[test]
@@ -2319,6 +2703,10 @@ mod tests {
     fn load_balancers_route_through_target_groups_to_registered_ec2_targets() {
         let alb_arn = "arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/app/web/one";
         let nlb_arn = "arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/net/internal/two";
+        let alb_listener_arn =
+            "arn:aws:elasticloadbalancing:us-east-1:123:listener/app/web/one/https";
+        let nlb_listener_arn =
+            "arn:aws:elasticloadbalancing:us-east-1:123:listener/net/internal/two/tcp";
         let alb_target_group_arn = "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/web/one";
         let nlb_target_group_arn =
             "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/internal/two";
@@ -2336,6 +2724,32 @@ mod tests {
                 LoadBalancer::builder()
                     .load_balancer_arn(nlb_arn)
                     .r#type(LoadBalancerTypeEnum::Network)
+                    .build(),
+            ],
+            listeners: vec![
+                Listener::builder()
+                    .listener_arn(alb_listener_arn)
+                    .load_balancer_arn(alb_arn)
+                    .protocol(ProtocolEnum::Https)
+                    .port(443)
+                    .default_actions(
+                        Action::builder()
+                            .r#type(ActionTypeEnum::Forward)
+                            .target_group_arn(alb_target_group_arn)
+                            .build(),
+                    )
+                    .build(),
+                Listener::builder()
+                    .listener_arn(nlb_listener_arn)
+                    .load_balancer_arn(nlb_arn)
+                    .protocol(ProtocolEnum::Tcp)
+                    .port(80)
+                    .default_actions(
+                        Action::builder()
+                            .r#type(ActionTypeEnum::Forward)
+                            .target_group_arn(nlb_target_group_arn)
+                            .build(),
+                    )
                     .build(),
             ],
             target_groups: vec![
@@ -2378,16 +2792,26 @@ mod tests {
             .nodes
             .iter()
             .any(|node| node.data.id == nlb_target_group));
-        assert!(graph.edges.iter().any(|edge| {
-            edge.data.source == format!("alb-{alb_arn}")
-                && edge.data.target == alb_target_group
-                && edge.data.label == "routes to target group"
-        }));
-        assert!(graph.edges.iter().any(|edge| {
-            edge.data.source == format!("nlb-{nlb_arn}")
-                && edge.data.target == nlb_target_group
-                && edge.data.label == "routes to target group"
-        }));
+        for (load_balancer, listener, target_group) in [
+            (format!("alb-{alb_arn}"), alb_listener_arn, alb_target_group),
+            (format!("nlb-{nlb_arn}"), nlb_listener_arn, nlb_target_group),
+        ] {
+            assert!(graph.edges.iter().any(|edge| {
+                edge.data.source == load_balancer && edge.data.target == listener_node_id(listener)
+            }));
+            assert!(graph.edges.iter().any(|edge| {
+                edge.data.source == listener_node_id(listener)
+                    && edge.data.target == default_rule_node_id(listener)
+            }));
+            assert!(graph.edges.iter().any(|edge| {
+                edge.data.source == default_rule_node_id(listener)
+                    && edge.data.target == target_group
+                    && edge.data.label == "forwards to target group"
+            }));
+            assert!(!graph.edges.iter().any(|edge| {
+                edge.data.source == load_balancer && edge.data.target == target_group
+            }));
+        }
         assert!(graph.edges.iter().any(|edge| {
             edge.data.source == target_group_node_id(alb_target_group_arn)
                 && edge.data.label == "registered EC2 target"
@@ -2398,6 +2822,129 @@ mod tests {
                 && edge.data.label == "registered EC2 target"
                 && edge.data.target.starts_with("target_ec2-")
         }));
+    }
+
+    #[test]
+    fn conditional_weighted_rules_only_link_their_forwarded_target_groups() {
+        let alb_arn = "arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/app/web/one";
+        let listener_arn = "arn:aws:elasticloadbalancing:us-east-1:123:listener/app/web/one/https";
+        let rule_arn = "arn:aws:elasticloadbalancing:us-east-1:123:listener-rule/app/web/one/api";
+        let first_group = "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/api-blue/one";
+        let second_group = "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/api-green/two";
+        let disabled_group =
+            "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/api-disabled/four";
+        let attached_but_unused =
+            "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/unused/three";
+        let weighted_forward = Action::builder()
+            .r#type(ActionTypeEnum::Forward)
+            .forward_config(
+                ForwardActionConfig::builder()
+                    .target_groups(
+                        TargetGroupTuple::builder()
+                            .target_group_arn(first_group)
+                            .weight(80)
+                            .build(),
+                    )
+                    .target_groups(
+                        TargetGroupTuple::builder()
+                            .target_group_arn(second_group)
+                            .weight(20)
+                            .build(),
+                    )
+                    .target_groups(
+                        TargetGroupTuple::builder()
+                            .target_group_arn(disabled_group)
+                            .weight(0)
+                            .build(),
+                    )
+                    .build(),
+            )
+            .build();
+        let inventory = Inventory {
+            load_balancers: vec![LoadBalancer::builder()
+                .load_balancer_arn(alb_arn)
+                .r#type(LoadBalancerTypeEnum::Application)
+                .build()],
+            listeners: vec![Listener::builder()
+                .listener_arn(listener_arn)
+                .load_balancer_arn(alb_arn)
+                .default_actions(Action::builder().r#type(ActionTypeEnum::Redirect).build())
+                .build()],
+            listener_rules: BTreeMap::from([(
+                listener_arn.to_owned(),
+                vec![
+                    Rule::builder()
+                        .rule_arn(rule_arn)
+                        .priority("10")
+                        .conditions(
+                            RuleCondition::builder()
+                                .field("path-pattern")
+                                .values("/api/*")
+                                .build(),
+                        )
+                        .actions(weighted_forward)
+                        .build(),
+                    Rule::builder()
+                        .rule_arn("default-rule-from-aws")
+                        .is_default(true)
+                        .build(),
+                ],
+            )]),
+            target_groups: [
+                first_group,
+                second_group,
+                disabled_group,
+                attached_but_unused,
+            ]
+            .into_iter()
+            .map(|arn| {
+                TargetGroup::builder()
+                    .target_group_arn(arn)
+                    .load_balancer_arns(alb_arn)
+                    .build()
+            })
+            .collect(),
+            ..Inventory::default()
+        };
+
+        let graph = build_graph(inventory);
+        let rule_node = listener_rule_node_id(rule_arn);
+        let rule = graph
+            .nodes
+            .iter()
+            .find(|node| node.data.id == rule_node)
+            .expect("custom rule");
+        assert_eq!(
+            rule.data.details.get("Conditions"),
+            Some(&"path-pattern: /api/*".to_owned())
+        );
+        assert_eq!(
+            rule.data.details.get("Actions"),
+            Some(&"forward".to_owned())
+        );
+        assert!(!graph
+            .nodes
+            .iter()
+            .any(|node| node.data.id == listener_rule_node_id("default-rule-from-aws")));
+        for (group, weight) in [(first_group, 80), (second_group, 20)] {
+            assert!(graph.edges.iter().any(|edge| {
+                edge.data.source == rule_node
+                    && edge.data.target == target_group_node_id(group)
+                    && edge.data.label == format!("forwards to target group (weight {weight})")
+            }));
+        }
+        assert!(graph.edges.iter().any(|edge| {
+            edge.data.source == rule_node
+                && edge.data.target == target_group_node_id(disabled_group)
+                && edge.data.label == "configured target group (weight 0; no traffic)"
+        }));
+        assert!(!graph
+            .edges
+            .iter()
+            .any(|edge| edge.data.target == target_group_node_id(attached_but_unused)));
+        assert!(!graph.edges.iter().any(|edge| edge.data.source
+            == default_rule_node_id(listener_arn)
+            && edge.data.target.starts_with("target_group-")));
     }
 
     #[test]

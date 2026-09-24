@@ -2,13 +2,14 @@ export const PLANNING_DOCUMENT_SCHEMA = 'graphivo/planning-document';
 export const PLANNING_DOCUMENT_VERSION = 1;
 export const PLANNING_DOCUMENT_STORAGE_KEY = 'graphivo.planning.last-document';
 export const DEFAULT_PLANNING_DOCUMENT_NAME = 'Untitled architecture';
+export const DEFAULT_PLANNING_ZOOM = 1.15;
+export const MIN_PLANNING_ZOOM = 0.45;
+export const MAX_PLANNING_ZOOM = 2.4;
 
-const DEFAULT_VIEWPORT = Object.freeze({ zoom: 1, pan: Object.freeze({ x: 0, y: 0 }) });
+const DEFAULT_VIEWPORT = Object.freeze({ zoom: DEFAULT_PLANNING_ZOOM, pan: Object.freeze({ x: 0, y: 0 }) });
 const CANVAS_SIZE = 3000;
 const MIN_NODE_WIDTH = 126;
 const MIN_NODE_HEIGHT = 68;
-const MIN_ZOOM = 0.6;
-const MAX_ZOOM = 1.55;
 const MAX_NODES = 2000;
 const MAX_EDGES = 5000;
 
@@ -232,7 +233,7 @@ export function normalizePlanningDocument(input, serviceCatalog, options = {}) {
     throw new PlanningDocumentError('"viewport.pan" must be an object.');
   }
 
-  const zoom = clamp(finiteNumber(migrated.viewport.zoom, 'viewport.zoom'), MIN_ZOOM, MAX_ZOOM);
+  const zoom = clamp(finiteNumber(migrated.viewport.zoom, 'viewport.zoom'), MIN_PLANNING_ZOOM, MAX_PLANNING_ZOOM);
   const panX = clamp(finiteNumber(migrated.viewport.pan.x, 'viewport.pan.x'), -CANVAS_SIZE * zoom, 0);
   const panY = clamp(finiteNumber(migrated.viewport.pan.y, 'viewport.pan.y'), -CANVAS_SIZE * zoom, 0);
 

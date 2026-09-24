@@ -2,6 +2,7 @@
 name = "awsome"
 version = "0.1.0"
 description = "A desktop AWS topology explorer"
+license = "MIT"
 authors = ["Basil"]
 edition = "2021"
 

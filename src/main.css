@@ -1,3 +1,12 @@
+:root {
+  --font-ui: 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans Variable', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-ui);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
 html,
 body,
 #root {
@@ -5,6 +14,17 @@ body,
   padding: 0;
   width: 100%;
   height: 100%;
+}
+
+body {
+  background: #071327;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 * {

@@ -22,6 +22,7 @@ It uses a lightweight Vite + React frontend and a native Rust backend. The Rust 
 - Transit Gateways, attachments, route tables, and discovered route paths
 - Application Load Balancers
 - Network Load Balancers
+- Load-balancer listeners, default actions, and custom routing rules (including conditions and weighted forwarding)
 - Load-balancer target groups, health-check configuration, and registered EC2, IP, Lambda, and ALB targets
 
 awsome also includes a Planning mode for arranging AWS services on a manual architecture canvas without changing live infrastructure.
@@ -58,10 +59,11 @@ Planning data is stored only on the current device in the app webview's local st
 1. Tauri loads the Vite-built React frontend in a native desktop window.
 2. The UI calls Tauri's typed `fetch_topology` command.
 3. Rust loads the selected AWS profile and region from local AWS shared configuration.
-4. The Rust command follows every AWS pagination token, fetches load-balancer target registrations with bounded concurrency, and builds nodes and defensible network relationships from the regional inventory.
+4. The Rust command follows every AWS pagination token, fetches load-balancer listeners, rules, and target registrations with bounded concurrency, and builds nodes and defensible network relationships from the regional inventory.
 5. Cytoscape renders the result and the UI exposes selected-resource details.
 
 If an AWS inventory API is unavailable—for example because the selected profile lacks permission—awsome keeps the successfully discovered resources, marks the map as incomplete, and lists the affected inventories in the UI. Internal inventory-task failures still fail the request safely.
+If every primary inventory request fails, the load fails instead of presenting an empty graph as a successful scan. After a failed reload, the previous graph remains visible with its original profile, region, load time, and an explicit previous-snapshot warning.
 
 ## Live topology to architecture plan
 
@@ -104,6 +106,7 @@ npm run build:web
 ```
 
 Tauri packages the Vite build from `dist/` inside the native application; it does not start a local Node.js server in production.
+The desktop bundle is currently a Debian package. The GitHub Actions workflow runs frontend and Rust tests, checks Rust formatting, builds the bundle, launches the installed app in a virtual display, and uploads the `.deb` as a workflow artifact. The native and npm package versions are both `0.1.0`.
 
 ## AWS Usage
 
@@ -121,6 +124,7 @@ Live mode is read-only. It makes regional inventory calls and does not create, u
 For large inventories, use **Find resource** to search resource names, IDs, types, and returned details. The resource chips above the graph can also narrow the visible topology by service type; the result count makes the active subset clear.
 
 Inside the live topology canvas, use the mouse wheel to zoom around the pointer, drag the background to pan, and drag a resource toward any canvas edge to automatically reveal more workspace in that direction. The fit button restores the complete topology to view.
+Short connection captions appear only where they fit between nodes. Hover over a connection or select it to read the full relationship.
 
 ## Project Structure
 
@@ -139,4 +143,8 @@ src-tauri/                   Tauri configuration and Rust AWS topology command
 - Edges are emitted only when both endpoint resources were discovered. Subnets without an explicit route-table association are connected to the VPC's main route table because that is the effective AWS routing behavior.
 - Route targets are shown only when their endpoint was discovered, so the graph does not emit dangling connections. This includes internet gateways, NAT gateways, EC2 instances, VPC endpoints, peering connections, egress-only internet gateways, and Transit Gateways.
 - ELBv2 discovery currently visualizes Application and Network Load Balancers. Gateway Load Balancers are outside the supported-resource set.
-- Load-balancer paths are shown as load balancer → target group → registered target. Target registrations include target type, protocol/port, availability zone, and returned health state/reason where AWS provides them. Listener and rule routing are not represented yet.
+- Load-balancer paths are shown as load balancer → listener → rule → target group → registered target. Default rule actions are read from listeners; custom rules show priority, conditions, actions, and target-group weights. Only forward actions create target-group routing edges. If listener or rule inventory is unavailable, the UI warns that routing paths may be incomplete.
+
+## License
+
+awsome is licensed under the [MIT License](LICENSE).
