@@ -43,6 +43,20 @@
 @keyframes modeEnter { from { opacity: 0; transform: translate3d(0, 7px, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
 
 .toolbarCard { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 17px 19px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 1px 2px rgba(15, 23, 42, .03); }
+.snapshotBar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 36px; color: var(--muted); font-size: 13px; }
+.snapshotSourceHint { flex: 1 1 160px; }
+.snapshotBar label { font-weight: 700; white-space: nowrap; }
+.snapshotBar select { flex: 0 1 330px; min-width: 175px; height: 36px; padding: 0 9px; color: var(--ink); border: 1px solid var(--line); border-radius: 7px; background: var(--panel); font: inherit; }
+.snapshotBar .secondaryBtn { min-height: 36px; padding: 0 11px; font-size: 13px; }
+.comparisonPanel { display: grid; gap: 9px; color: var(--ink); font-size: 13px; }
+.comparisonPanel > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.comparisonPanel > div:first-child button { display: inline-flex; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.comparisonPanel p { margin: 0; color: var(--muted); }
+.changeList { display: grid; gap: 10px; margin-top: 7px; }
+.changeList > div { display: grid; gap: 2px; min-width: 0; }
+.changeList strong { color: var(--accent); }
+.changeList span { min-width: 0; overflow-wrap: anywhere; }
+.filteredSelectionNote { margin: 6px 0 10px; color: var(--muted); font-size: 13px; }
 .sourceLabel { display: inline-flex; align-items: center; gap: 8px; align-self: center; min-width: 120px; color: #42526a; font-size: 15px; font-weight: 700; }
 .sourceLabel svg { color: #476581; }
 .fieldGroup { display: flex; flex-direction: column; gap: 6px; }
@@ -92,7 +106,9 @@
 .graphPanel { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background-color: #fbfcfe; background-image: radial-gradient(#dbe5f0 1px, transparent 1px); background-size: 20px 20px; }
 .graphPanel::after { position: absolute; z-index: 0; top: 0; right: 0; bottom: 0; left: 0; content: ""; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,255,255,0) 28%); }
 .canvasTools { position: absolute; z-index: 4; top: 12px; right: 12px; left: 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; pointer-events: none; }
-.legend { display: inline-flex; flex-wrap: wrap; align-items: center; max-width: calc(100% - 48px); gap: 9px 12px; padding: 11px 13px; border: 1px solid #e0e7ef; border-radius: 7px; background: rgba(255,255,255,.92); box-shadow: 0 1px 2px rgba(15,23,42,.04); color: #607086; font-size: 13px; font-weight: 650; pointer-events: auto; }
+.canvasToolActions { display: inline-flex; gap: 6px; pointer-events: auto; }
+.canvasToolActions .iconButton:disabled { cursor: not-allowed; opacity: .45; }
+.legend { display: inline-flex; flex-wrap: wrap; align-items: center; max-width: calc(100% - 92px); gap: 9px 12px; padding: 11px 13px; border: 1px solid #e0e7ef; border-radius: 7px; background: rgba(255,255,255,.92); box-shadow: 0 1px 2px rgba(15,23,42,.04); color: #607086; font-size: 13px; font-weight: 650; pointer-events: auto; }
 .legend button { display: inline-flex; align-items: center; gap: 4px; padding: 2px; color: inherit; border: 0; border-radius: 4px; background: transparent; cursor: pointer; font: inherit; font-size: inherit; font-weight: inherit; white-space: nowrap; transition: color .14s ease, opacity .14s ease, background .14s ease; }
 .legend button:hover { color: #1d4ed8; background: #eff6ff; }
 .legend button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }

@@ -15,25 +15,25 @@ use aws_sdk_elasticloadbalancingv2::{
     Client as Elbv2Client,
 };
 use aws_sdk_rds::{types::DbInstance, Client as RdsClient};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     future::Future,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Graph {
     pub(crate) nodes: Vec<Node>,
     pub(crate) edges: Vec<Edge>,
     pub(crate) warnings: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Node {
     data: NodeData,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct NodeData {
     id: String,
     label: String,
@@ -42,12 +42,12 @@ pub(crate) struct NodeData {
     details: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Edge {
     data: EdgeData,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct EdgeData {
     id: String,
     source: String,
@@ -2067,7 +2067,21 @@ fn load_balancer_kind_label(resource_type: &str) -> &'static str {
     }
 }
 
-pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Graph, String> {
+async fn tracked<F: Future>(
+    name: &'static str,
+    progress: &(dyn Fn(&str) + Send + Sync),
+    future: F,
+) -> F::Output {
+    let result = future.await;
+    progress(name);
+    result
+}
+
+pub(crate) async fn fetch_topology(
+    profile: String,
+    region: String,
+    progress: &(dyn Fn(&str) + Send + Sync),
+) -> Result<Graph, String> {
     let profile = if profile.trim().is_empty() {
         "default"
     } else {
@@ -2084,6 +2098,7 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         .region(Region::new(region.to_owned()))
         .load()
         .await;
+    progress("AWS credentials ready");
 
     let ec2 = Ec2Client::new(&sdk_config);
     let rds = RdsClient::new(&sdk_config);
@@ -2107,22 +2122,34 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         load_balancers_result,
         target_groups_result,
     ) = tokio::join!(
-        list_vpcs(&ec2),
-        list_subnets(&ec2),
-        list_instances(&ec2),
-        list_security_groups(&ec2),
-        list_db_instances(&rds),
-        list_internet_gateways(&ec2),
-        list_nat_gateways(&ec2),
-        list_route_tables(&ec2),
-        list_vpc_endpoints(&ec2),
-        list_vpc_peering_connections(&ec2),
-        list_egress_only_internet_gateways(&ec2),
-        list_transit_gateways(&ec2),
-        list_transit_gateway_attachments(&ec2),
-        list_transit_gateway_route_tables(&ec2),
-        list_load_balancers(&elbv2),
-        list_target_groups(&elbv2),
+        tracked("VPCs", progress, list_vpcs(&ec2)),
+        tracked("subnets", progress, list_subnets(&ec2)),
+        tracked("EC2 instances", progress, list_instances(&ec2)),
+        tracked("security groups", progress, list_security_groups(&ec2)),
+        tracked("RDS instances", progress, list_db_instances(&rds)),
+        tracked("internet gateways", progress, list_internet_gateways(&ec2)),
+        tracked("NAT gateways", progress, list_nat_gateways(&ec2)),
+        tracked("route tables", progress, list_route_tables(&ec2)),
+        tracked("VPC endpoints", progress, list_vpc_endpoints(&ec2)),
+        tracked("VPC peering", progress, list_vpc_peering_connections(&ec2)),
+        tracked(
+            "egress-only gateways",
+            progress,
+            list_egress_only_internet_gateways(&ec2)
+        ),
+        tracked("transit gateways", progress, list_transit_gateways(&ec2)),
+        tracked(
+            "transit attachments",
+            progress,
+            list_transit_gateway_attachments(&ec2)
+        ),
+        tracked(
+            "transit route tables",
+            progress,
+            list_transit_gateway_route_tables(&ec2)
+        ),
+        tracked("load balancers", progress, list_load_balancers(&elbv2)),
+        tracked("target groups", progress, list_target_groups(&elbv2)),
     );
 
     require_inventory_success(
@@ -2193,9 +2220,21 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         target_health_result,
         (transit_gateway_routes, transit_gateway_route_warnings),
     ) = tokio::join!(
-        list_listeners(&elbv2, &load_balancers),
-        list_target_health(&elbv2, &target_groups),
-        list_transit_gateway_routes(&ec2, &transit_gateway_route_tables),
+        tracked(
+            "listeners",
+            progress,
+            list_listeners(&elbv2, &load_balancers)
+        ),
+        tracked(
+            "target health",
+            progress,
+            list_target_health(&elbv2, &target_groups)
+        ),
+        tracked(
+            "transit routes",
+            progress,
+            list_transit_gateway_routes(&ec2, &transit_gateway_route_tables)
+        ),
     );
     let (listeners, listener_warnings) =
         listeners_result.map_err(|error| format!("AWS inventory request failed: {error}"))?;
@@ -2207,6 +2246,7 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
     let (listener_rules, rule_warnings) = list_listener_rules(&elbv2, &listeners)
         .await
         .map_err(|error| format!("AWS inventory request failed: {error}"))?;
+    progress("listener rules");
     warnings.extend(rule_warnings);
 
     let mut graph = build_graph(Inventory {
@@ -2232,6 +2272,7 @@ pub(crate) async fn fetch_topology(profile: String, region: String) -> Result<Gr
         target_health,
     });
     graph.warnings = warnings;
+    progress("topology built");
     Ok(graph)
 }
 

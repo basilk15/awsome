@@ -589,6 +589,7 @@ dependencies = [
  "aws-sdk-elasticloadbalancingv2",
  "aws-sdk-rds",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tokio",

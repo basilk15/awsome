@@ -57,10 +57,10 @@ Planning data is stored only on the current device in the app webview's local st
 ## How It Works
 
 1. Tauri loads the Vite-built React frontend in a native desktop window.
-2. The UI calls Tauri's typed `fetch_topology` command.
+2. The UI offers locally configured AWS profiles and the selected account's enabled regions, then calls Tauri's `fetch_topology` command.
 3. Rust loads the selected AWS profile and region from local AWS shared configuration.
 4. The Rust command follows every AWS pagination token, fetches load-balancer listeners, rules, and target registrations with bounded concurrency, and builds nodes and defensible network relationships from the regional inventory.
-5. Cytoscape renders the result and the UI exposes selected-resource details.
+5. Cytoscape renders the result and the UI exposes selected-resource details. Each successful scan is saved in the app data directory for later offline viewing and comparison.
 
 If an AWS inventory API is unavailable—for example because the selected profile lacks permission—awsome keeps the successfully discovered resources, marks the map as incomplete, and lists the affected inventories in the UI. Internal inventory-task failures still fail the request safely.
 If every primary inventory request fails, the load fails instead of presenting an empty graph as a successful scan. After a failed reload, the previous graph remains visible with its original profile, region, load time, and an explicit previous-snapshot warning.
@@ -117,11 +117,13 @@ You can choose:
 - AWS profile
 - AWS region
 
-Then load the live topology from the app UI.
+The profile field suggests names from local AWS config and credentials files. The region field suggests enabled regions returned by AWS; you can still type a region if that lookup is unavailable. Then load the live topology from the app UI. The scan shows inventory progress and has a **Cancel scan** button.
 
 Live mode is read-only. It makes regional inventory calls and does not create, update, or delete AWS resources. VPC, subnet, EC2, security-group, RDS, gateway, endpoint, peering, Transit Gateway, route-table, and ELBv2 inventory is fully paginated so large accounts are not silently truncated.
 
-For large inventories, use **Find resource** to search resource names, IDs, types, and returned details. The resource chips above the graph can also narrow the visible topology by service type; the result count makes the active subset clear.
+For large inventories, use **Find resource** to search resource names, IDs, types, and returned details. The resource chips above the graph can also narrow the visible topology by service type; the result count makes the active subset clear. Filtering preserves the graph's current pan and zoom. Use **Focus first matching resource** to bring a result into view.
+
+Successful scans are saved automatically. Use **Saved scans** to open one without AWS access, compare it with the displayed topology, or delete it. Refreshing a profile and region also compares the new result with the most recent saved scan for that source. Snapshot files contain resource inventory and metadata, so treat the app data directory as account information.
 
 Inside the live topology canvas, use the mouse wheel to zoom around the pointer, drag the background to pan, and drag a resource toward any canvas edge to automatically reveal more workspace in that direction. The fit button restores the complete topology to view.
 Short connection captions appear only where they fit between nodes. Hover over a connection or select it to read the full relationship.
