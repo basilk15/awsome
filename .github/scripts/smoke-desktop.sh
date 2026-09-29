@@ -13,7 +13,7 @@ for _ in $(seq 1 30); do
     echo "The desktop app exited before opening a window." >&2
     exit 1
   fi
-  if xdotool search --all --onlyvisible --pid "$app_pid" --name '^awsome$' >/dev/null 2>&1; then
+  if xdotool search --all --onlyvisible --pid "$app_pid" --name '^awsome' >/dev/null 2>&1; then
     sleep 2
     if ! kill -0 "$app_pid" 2>/dev/null; then
       cat "$smoke_log"

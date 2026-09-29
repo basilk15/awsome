@@ -1,17 +1,21 @@
 {
   "name": "awsome",
-  "version": "0.1.0",
-  "description": "Tauri desktop app to visualize AWS network topology",
+  "version": "0.2.0",
+  "description": "Electron desktop app to visualize AWS network topology",
+  "author": "Basil",
+  "desktopName": "com.basil.awsome.desktop",
   "license": "MIT",
+  "main": "electron/main.cjs",
   "scripts": {
-    "start": "tauri dev",
-    "dev": "tauri dev",
+    "start": "npm run build:native:dev && concurrently -k \"vite\" \"wait-on tcp:5173 && electron . --no-sandbox\"",
+    "dev": "npm run start",
     "dev:web": "vite",
     "test": "node --test",
     "build:web": "vite build",
     "preview:web": "vite preview",
-    "build": "tauri build",
-    "tauri": "tauri"
+    "build:native:dev": "CARGO_BUILD_JOBS=1 CARGO_TARGET_DIR=src-tauri/target cargo build --manifest-path native/Cargo.toml --locked",
+    "build:native": "CARGO_BUILD_JOBS=1 CARGO_TARGET_DIR=src-tauri/target cargo build --manifest-path native/Cargo.toml --release --locked",
+    "build": "npm run build:web && npm run build:native && electron-builder --linux deb"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
@@ -23,8 +27,32 @@
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.0",
+    "wait-on": "^8.0.0",
     "vite": "^7.1.0"
+  },
+  "build": {
+    "appId": "com.basil.awsome",
+    "productName": "awsome",
+    "asar": true,
+    "afterPack": "electron/afterPack.cjs",
+    "directories": { "output": "release" },
+    "files": ["dist/**", "electron/**", "package.json"],
+    "extraResources": [
+      { "from": "src-tauri/target/release/awsome-native", "to": "bin/awsome-native" },
+      { "from": "src-tauri/icons/icon.png", "to": "icons/icon.png" }
+    ],
+    "linux": {
+      "target": ["deb"],
+      "category": "Graphics",
+      "maintainer": "Basil",
+      "syncDesktopName": true,
+      "executableName": "awsome",
+      "icon": "src-tauri/icons/icon.png"
+    },
+    "artifactName": "awsome_${version}_${arch}.${ext}"
   }
 }

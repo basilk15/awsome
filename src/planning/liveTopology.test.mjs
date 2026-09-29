@@ -217,3 +217,18 @@ test('skips malformed, unsupported, duplicate, and dangling input without throwi
   assert.equal(plan.nodes[0].profile, 'default');
   assert.equal(plan.nodes[0].region, 'unknown');
 });
+
+test('multi-region import keeps each resource and relationship in its own region', () => {
+  const graph = { nodes: [
+    { data: { id: 'us-east-1::vpc-vpc-1', label: 'east', type: 'vpc', region: 'us-east-1' } },
+    { data: { id: 'eu-west-1::vpc-vpc-1', label: 'west', type: 'vpc', region: 'eu-west-1' } },
+    { data: { id: 'us-east-1::subnet-subnet-1', label: 'subnet', type: 'subnet', region: 'us-east-1' } }
+  ], edges: [
+    { data: { id: 'us-east-1::edge-1', source: 'us-east-1::vpc-vpc-1', target: 'us-east-1::subnet-subnet-1', label: 'contains' } }
+  ] };
+  const plan = convertLiveTopologyToPlan(graph, { profile: 'team', region: 'eu-west-1, us-east-1' });
+  assert.equal(plan.nodes.length, 3);
+  assert.equal(plan.nodes.find((node) => node.liveNodeId === 'us-east-1::vpc-vpc-1').resourceId, 'vpc-1');
+  assert.deepEqual(new Set(plan.nodes.map((node) => node.region)), new Set(['eu-west-1', 'us-east-1']));
+  assert.equal(plan.edges[0].region, 'us-east-1');
+});

@@ -8,6 +8,7 @@ import {
   deserializePlanningDocument,
   loadPlanningDocument,
   normalizePlanningDocument,
+  planningTopologyFingerprint,
   savePlanningDocument,
   serializePlanningDocument
 } from './planningDocument.mjs';
@@ -29,6 +30,22 @@ function exampleDocument() {
     viewport: { zoom: 1.2, pan: { x: -120, y: -80 } }
   };
 }
+
+test('topology changes exclude layout and viewport changes', () => {
+  const original = exampleDocument();
+  const fingerprint = planningTopologyFingerprint(original);
+  const rearranged = {
+    ...original,
+    updatedAt: '2026-07-29T10:00:00.000Z',
+    nodes: original.nodes.map((node) => ({ ...node, x: node.x + 80, y: node.y + 20, width: node.width + 10, height: node.height + 10 })),
+    viewport: { zoom: 1.8, pan: { x: -300, y: -240 } }
+  };
+
+  assert.equal(planningTopologyFingerprint(rearranged), fingerprint);
+  assert.notEqual(planningTopologyFingerprint({ ...rearranged, edges: [] }), fingerprint);
+  assert.notEqual(planningTopologyFingerprint({ ...rearranged, nodes: [...rearranged.nodes, { id: 'node-3', serviceKey: 'ec2', name: 'Worker', x: 50, y: 70, width: 190, height: 90 }] }), fingerprint);
+  assert.notEqual(planningTopologyFingerprint({ ...rearranged, nodes: rearranged.nodes.map((node) => node.id === 'node-1' ? { ...node, name: 'Renamed API' } : node) }), fingerprint);
+});
 
 test('serializes and deserializes a complete versioned planning document', () => {
   const original = exampleDocument();

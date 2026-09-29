@@ -588,6 +588,7 @@ dependencies = [
  "aws-sdk-ec2",
  "aws-sdk-elasticloadbalancingv2",
  "aws-sdk-rds",
+ "futures-util",
  "serde",
  "serde_json",
  "tauri",

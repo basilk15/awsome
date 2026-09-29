@@ -2,9 +2,9 @@
   <img src="./docs/assets/awsome-logo-transparent.png" alt="awsome logo" width="400" />
 </p>
 
-`awsome` is a Tauri desktop app for visualizing AWS infrastructure as an interactive topology graph and turning a live snapshot into an editable architecture plan.
+`awsome` is an Electron desktop app for visualizing AWS infrastructure as an interactive topology graph and turning a live snapshot into an editable architecture plan.
 
-It uses a lightweight Vite + React frontend and a native Rust backend. The Rust backend reads the selected local AWS profile, fetches live resources with the AWS SDK for Rust, transforms them into graph data, and returns it to the Cytoscape UI through a Tauri command.
+It uses a Vite + React frontend and a companion Rust process. Rust reads the selected local AWS profile, fetches live resources with the AWS SDK for Rust, transforms them into graph data, and returns it to the Cytoscape UI through Electron's command bridge.
 
 ## What It Shows
 
@@ -47,7 +47,7 @@ Planning data is stored only on the current device in the app webview's local st
 
 ## Stack
 
-- Tauri 2
+- Electron
 - Rust
 - Vite
 - React
@@ -56,18 +56,18 @@ Planning data is stored only on the current device in the app webview's local st
 
 ## How It Works
 
-1. Tauri loads the Vite-built React frontend in a native desktop window.
-2. The UI offers locally configured AWS profiles and the selected account's enabled regions, then calls Tauri's `fetch_topology` command.
+1. Electron loads the Vite-built React frontend in a desktop window.
+2. The UI offers locally configured AWS profiles and the selected account's enabled regions. You can scan one region or select several additional regions.
 3. Rust loads the selected AWS profile and region from local AWS shared configuration.
-4. The Rust command follows every AWS pagination token, fetches load-balancer listeners, rules, and target registrations with bounded concurrency, and builds nodes and defensible network relationships from the regional inventory.
-5. Cytoscape renders the result and the UI exposes selected-resource details. Each successful scan is saved in the app data directory for later offline viewing and comparison.
+4. The Rust command scans up to three regions concurrently, follows every AWS pagination token, fetches load-balancer listeners, rules, and target registrations with bounded concurrency, and builds nodes and defensible network relationships from the regional inventory.
+5. Cytoscape renders the combined result with region filters and selected-resource details. Each successful scan is saved in the app data directory for later offline viewing and comparison.
 
-If an AWS inventory API is unavailable—for example because the selected profile lacks permission—awsome keeps the successfully discovered resources, marks the map as incomplete, and lists the affected inventories in the UI. Internal inventory-task failures still fail the request safely.
+If an AWS inventory API is unavailable—for example because the selected profile lacks permission—awsome keeps the successfully discovered resources, marks the map as incomplete, and lists the affected inventories in the UI. A multi-region scan keeps successful regions when another region fails. Comparisons exclude inventory scopes that were incomplete in either scan, so missing data is not presented as a confirmed deletion. Internal inventory-task failures still fail the request safely.
 If every primary inventory request fails, the load fails instead of presenting an empty graph as a successful scan. After a failed reload, the previous graph remains visible with its original profile, region, load time, and an explicit previous-snapshot warning.
 
 ## Live topology to architecture plan
 
-1. In **Live mode**, choose an AWS profile and region and load the topology.
+1. In **Live mode**, choose an AWS profile and one or more regions and load the topology.
 2. After the load succeeds, select **Open in planning**.
 3. awsome creates a deterministic, editable layout containing the discovered network resources, load balancers, target groups, registered targets, and their directed relationships.
 4. Select an imported node to inspect its original resource label, resource ID, live type, profile, region, and import provenance. Its planning display name, size, and position can be changed without changing the saved live snapshot.
@@ -83,13 +83,21 @@ Install dependencies:
 npm install
 ```
 
-Run the Tauri desktop app in development:
+Run the Electron desktop app in development:
 
 ```bash
 npm run start
 ```
 
-This starts Vite on port `5173` and launches the Tauri desktop window against it.
+This builds the Rust companion, starts Vite on port `5173`, and launches Electron against it.
+
+To run the optional read-only AWS inventory smoke test against two regions using the `default` profile:
+
+```bash
+AWSOME_SMOKE_REGIONS=ap-southeast-1,ap-southeast-2 CARGO_TARGET_DIR=src-tauri/target cargo test --manifest-path native/Cargo.toml --locked tests::live_multi_region_inventory_smoke -- --ignored
+```
+
+Set `AWSOME_SMOKE_PROFILE` to use another local profile.
 
 ## Production Flow
 
@@ -105,8 +113,9 @@ To only build the static frontend:
 npm run build:web
 ```
 
-Tauri packages the Vite build from `dist/` inside the native application; it does not start a local Node.js server in production.
-The desktop bundle is currently a Debian package. The GitHub Actions workflow runs frontend and Rust tests, checks Rust formatting, builds the bundle, launches the installed app in a virtual display, and uploads the `.deb` as a workflow artifact. The native and npm package versions are both `0.1.0`.
+Electron packages the Vite build from `dist/` and the Rust companion in the Debian package; it does not start a local development server in production. The GitHub Actions workflow runs frontend and Rust tests, checks Rust formatting, builds the bundle, launches the installed app in a virtual display, and uploads the `.deb` as a workflow artifact. The native and npm package versions are both `0.2.0`.
+
+On first launch, Electron imports valid saved scans and planning architectures from the previous Tauri installation. It leaves the original data in place, keeps any existing Electron entry when IDs conflict, and reports entries it cannot import. Electron stores planning data under `com.basil.awsome.electron` in the user's configuration directory and scans under the same name in the user's data directory.
 
 ## AWS Usage
 
@@ -117,13 +126,13 @@ You can choose:
 - AWS profile
 - AWS region
 
-The profile field suggests names from local AWS config and credentials files. The region field suggests enabled regions returned by AWS; you can still type a region if that lookup is unavailable. Then load the live topology from the app UI. The scan shows inventory progress and has a **Cancel scan** button.
+The profile field suggests names from local AWS config and credentials files. The primary region field and **More regions** picker suggest enabled regions returned by AWS; you can still type a region if that lookup is unavailable. The lookup uses the SDK-resolved region when present and falls back to `us-east-1` otherwise. Load the live topology from the app UI. The scan shows each region's progress and status and has a **Cancel scan** button.
 
 Live mode is read-only. It makes regional inventory calls and does not create, update, or delete AWS resources. VPC, subnet, EC2, security-group, RDS, gateway, endpoint, peering, Transit Gateway, route-table, and ELBv2 inventory is fully paginated so large accounts are not silently truncated.
 
 For large inventories, use **Find resource** to search resource names, IDs, types, and returned details. The resource chips above the graph can also narrow the visible topology by service type; the result count makes the active subset clear. Filtering preserves the graph's current pan and zoom. Use **Focus first matching resource** to bring a result into view.
 
-Successful scans are saved automatically. Use **Saved scans** to open one without AWS access, compare it with the displayed topology, or delete it. Refreshing a profile and region also compares the new result with the most recent saved scan for that source. Snapshot files contain resource inventory and metadata, so treat the app data directory as account information.
+Successful scans are saved automatically. Use **Saved scans** to open one without AWS access, compare it with the displayed topology, or delete it after confirmation. Refreshing the same profile and set of regions also compares the new result with the most recent saved scan for that source. Partial scans identify uncertain changes instead of counting missing inventory as removals, including cross-region relationships whose remote region could not be scanned. Scan summaries are stored separately so the picker does not have to read every full graph; older snapshot files gain summaries when listed. **Storage** shows total disk use and lets you review the exact older scans before removing them while keeping a chosen number per source. Cleanup verifies each saved scan and stops if the candidate list changes after confirmation. Snapshot files contain resource inventory and metadata, so treat the app data directory as account information.
 
 Inside the live topology canvas, use the mouse wheel to zoom around the pointer, drag the background to pan, and drag a resource toward any canvas edge to automatically reveal more workspace in that direction. The fit button restores the complete topology to view.
 Short connection captions appear only where they fit between nodes. Hover over a connection or select it to read the full relationship.
@@ -134,12 +143,14 @@ Short connection captions appear only where they fit between nodes. Hover over a
 src/                         Vite + React UI
 src/planningDocument.mjs     Planning schema, validation, migration, and storage
 public/assets/               AWS service assets used by the UI
-src-tauri/                   Tauri configuration and Rust AWS topology command
+native/                      Rust AWS companion and migration code
+electron/                    Electron main process and preload bridge
+src-tauri/                   Retained legacy Tauri source, excluded from the Electron package
 ```
 
 ## Notes
 
-- There is no Electron, Next.js, or Node.js AWS backend in the app runtime.
+- The AWS inventory backend remains Rust. Electron's Node.js main process manages the desktop window and companion process.
 - Planning changes are local architecture-design edits; awsome does not apply them to AWS.
 - Returning to Live mode restores the loaded topology independently of planning changes.
 - Edges are emitted only when both endpoint resources were discovered. Subnets without an explicit route-table association are connected to the VPC's main route table because that is the effective AWS routing behavior.

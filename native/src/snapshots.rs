@@ -6,7 +6,6 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::Manager;
 
 const SCHEMA_VERSION: u8 = 1;
 
@@ -50,12 +49,8 @@ impl Snapshot {
     }
 }
 
-fn snapshot_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    Ok(app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?
-        .join("snapshots"))
+fn snapshot_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("snapshots")
 }
 
 fn snapshot_path(dir: &Path, id: &str) -> Result<PathBuf, String> {
@@ -189,7 +184,7 @@ fn list_at(dir: &Path) -> Result<Vec<SnapshotSummary>, String> {
     Ok(summaries)
 }
 
-fn load_at(dir: &Path, id: &str) -> Result<Snapshot, String> {
+pub(crate) fn load_at(dir: &Path, id: &str) -> Result<Snapshot, String> {
     let snapshot = read_snapshot(&snapshot_path(&dir, &id)?)?;
     if snapshot.id != id {
         return Err("Snapshot ID mismatch".to_owned());
@@ -248,62 +243,56 @@ fn prune_at(
     Ok(candidates.len())
 }
 
-#[tauri::command]
 pub(crate) async fn save_snapshot(
-    app: tauri::AppHandle,
+    data_dir: PathBuf,
     profile: String,
     region: String,
     graph: Graph,
 ) -> Result<SnapshotSummary, String> {
-    let dir = snapshot_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || save_at(&dir, profile, region, graph))
+    let dir = snapshot_dir(&data_dir);
+    tokio::task::spawn_blocking(move || save_at(&dir, profile, region, graph))
         .await
         .map_err(|error| error.to_string())?
 }
 
-#[tauri::command]
-pub(crate) async fn list_snapshots(app: tauri::AppHandle) -> Result<Vec<SnapshotSummary>, String> {
-    let dir = snapshot_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || list_at(&dir))
+pub(crate) async fn list_snapshots(data_dir: PathBuf) -> Result<Vec<SnapshotSummary>, String> {
+    let dir = snapshot_dir(&data_dir);
+    tokio::task::spawn_blocking(move || list_at(&dir))
         .await
         .map_err(|error| error.to_string())?
 }
 
-#[tauri::command]
-pub(crate) async fn load_snapshot(app: tauri::AppHandle, id: String) -> Result<Snapshot, String> {
-    let dir = snapshot_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || load_at(&dir, &id))
+pub(crate) async fn load_snapshot(data_dir: PathBuf, id: String) -> Result<Snapshot, String> {
+    let dir = snapshot_dir(&data_dir);
+    tokio::task::spawn_blocking(move || load_at(&dir, &id))
         .await
         .map_err(|error| error.to_string())?
 }
 
-#[tauri::command]
-pub(crate) async fn delete_snapshot(app: tauri::AppHandle, id: String) -> Result<(), String> {
-    let dir = snapshot_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || delete_at(&dir, &id))
+pub(crate) async fn delete_snapshot(data_dir: PathBuf, id: String) -> Result<(), String> {
+    let dir = snapshot_dir(&data_dir);
+    tokio::task::spawn_blocking(move || delete_at(&dir, &id))
         .await
         .map_err(|error| error.to_string())?
 }
 
-#[tauri::command]
 pub(crate) async fn preview_prune_snapshots(
-    app: tauri::AppHandle,
+    data_dir: PathBuf,
     keep_per_source: usize,
 ) -> Result<Vec<SnapshotSummary>, String> {
-    let dir = snapshot_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || preview_prune_at(&dir, keep_per_source))
+    let dir = snapshot_dir(&data_dir);
+    tokio::task::spawn_blocking(move || preview_prune_at(&dir, keep_per_source))
         .await
         .map_err(|error| error.to_string())?
 }
 
-#[tauri::command]
 pub(crate) async fn prune_snapshots(
-    app: tauri::AppHandle,
+    data_dir: PathBuf,
     keep_per_source: usize,
     expected: Vec<SnapshotSummary>,
 ) -> Result<usize, String> {
-    let dir = snapshot_dir(&app)?;
-    tauri::async_runtime::spawn_blocking(move || prune_at(&dir, keep_per_source, &expected))
+    let dir = snapshot_dir(&data_dir);
+    tokio::task::spawn_blocking(move || prune_at(&dir, keep_per_source, &expected))
         .await
         .map_err(|error| error.to_string())?
 }

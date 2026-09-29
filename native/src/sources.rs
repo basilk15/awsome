@@ -30,7 +30,6 @@ fn profile_names(text: &str, config_file: bool) -> Vec<String> {
         .collect()
 }
 
-#[tauri::command]
 pub(crate) fn list_profiles() -> Vec<String> {
     let mut profiles = BTreeSet::from(["default".to_owned()]);
     for (env_name, fallback, config_file) in [
@@ -46,7 +45,6 @@ pub(crate) fn list_profiles() -> Vec<String> {
     profiles.into_iter().collect()
 }
 
-#[tauri::command]
 pub(crate) async fn list_regions(profile: String) -> Result<Vec<String>, String> {
     let config = aws_config::defaults(BehaviorVersion::latest())
         .profile_name(if profile.trim().is_empty() {

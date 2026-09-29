@@ -34,13 +34,15 @@ function cleanString(value) {
 }
 
 function typeFromId(id) {
-  const separator = id.indexOf('-');
-  return separator > 0 ? id.slice(0, separator) : '';
+  const localId = id.split('::').at(-1);
+  const separator = localId.indexOf('-');
+  return separator > 0 ? localId.slice(0, separator) : '';
 }
 
 function resourceIdFromLiveId(id, type) {
+  const localId = id.split('::').at(-1);
   const prefix = `${type}-`;
-  return id.startsWith(prefix) ? id.slice(prefix.length) : id;
+  return localId.startsWith(prefix) ? localId.slice(prefix.length) : localId;
 }
 
 function uniqueId(base, usedIds) {
@@ -70,7 +72,7 @@ function normalizeLiveNodes(graph, context) {
       resourceId,
       resourceLabel,
       profile: cleanString(context?.profile) || 'default',
-      region: cleanString(context?.region) || 'unknown'
+      region: cleanString(data.region) || cleanString(context?.region) || 'unknown'
     }];
   });
 
@@ -88,7 +90,7 @@ function normalizeLiveNodes(graph, context) {
   });
 }
 
-function normalizeLiveEdges(graph, nodeIdMap, context) {
+function normalizeLiveEdges(graph, nodeIdMap, nodeRegionMap, context) {
   const candidates = (Array.isArray(graph?.edges) ? graph.edges : []).flatMap((edge, index) => {
     const data = edge && typeof edge.data === 'object' ? edge.data : null;
     const liveSource = cleanString(data?.source);
@@ -102,7 +104,7 @@ function normalizeLiveEdges(graph, nodeIdMap, context) {
       target: nodeIdMap.get(liveTarget),
       label: relationshipLabel,
       profile: cleanString(context?.profile) || 'default',
-      region: cleanString(context?.region) || 'unknown',
+      region: nodeRegionMap.get(liveSource) || cleanString(context?.region) || 'unknown',
       inputIndex: index
     }];
   });
@@ -191,6 +193,7 @@ export function convertLiveTopologyToPlan(graph, context = {}) {
   const normalizedNodes = normalizeLiveNodes(graph, context);
   const usedNodeIds = new Set();
   const nodeIdMap = new Map();
+  const nodeRegionMap = new Map(normalizedNodes.map((node) => [node.liveNodeId, node.region]));
   const nodes = normalizedNodes.map((node) => {
     const id = uniqueId(`live:${node.liveNodeId}`, usedNodeIds);
     nodeIdMap.set(node.liveNodeId, id);
@@ -212,7 +215,7 @@ export function convertLiveTopologyToPlan(graph, context = {}) {
     };
   });
 
-  const normalizedEdges = normalizeLiveEdges(graph, nodeIdMap, context);
+  const normalizedEdges = normalizeLiveEdges(graph, nodeIdMap, nodeRegionMap, context);
   const usedEdgeIds = new Set();
   const edges = normalizedEdges.map((edge) => ({
     id: uniqueId(`live-edge:${edge.sourceEdgeId}`, usedEdgeIds),

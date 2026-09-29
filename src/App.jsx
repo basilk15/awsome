@@ -1,5 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { compareTopologySnapshots, snapshotChangeCount } from './liveSnapshots.mjs';
+import { compareTopologySnapshots, snapshotChangeCount, snapshotUncertainCount } from './liveSnapshots.mjs';
+import { graphRegions, normaliseScanRegions, sameScanSource } from './liveRegions.mjs';
 import styles from '../styles/Home.module.css';
 import ec2Icon from 'aws-icons/icons/architecture-service/AmazonEC2.svg';
 import lambdaIcon from 'aws-icons/icons/architecture-service/AWSLambda.svg';
@@ -105,7 +106,7 @@ const SERVICE_MAP = {
   target_alb: { heading: 'Registered ALB Target', icon: applicationLoadBalancerIcon, fallbackColor: '#8c4fff' }
 };
 
-const PLANNING_SERVICES = [
+export const PLANNING_SERVICES = [
   ['Compute', 'Amazon EC2', 'ec2', '#ec7211'], ['Compute', 'AWS Lambda', 'lambda', '#ff9900'], ['Compute', 'Amazon ECS', 'ecs', '#d86613'], ['Compute', 'Amazon EKS', 'eks', '#326ce5'], ['Compute', 'AWS Fargate', 'fargate', '#ec7211'], ['Compute', 'Elastic Beanstalk', 'beanstalk', '#3f8624'], ['Compute', 'AWS Batch', 'batch', '#ec7211'],
   ['Storage', 'Amazon S3', 's3', '#569a31'], ['Storage', 'Amazon EBS', 'ebs', '#e7157b'], ['Storage', 'Amazon EFS', 'efs', '#8c4fff'], ['Storage', 'Amazon FSx', 'fsx', '#df3312'], ['Storage', 'Storage Gateway', 'gateway', '#569a31'],
   ['Database', 'Amazon RDS', 'rds', '#3b48cc'], ['Database', 'Amazon Aurora', 'aurora', '#3b48cc'], ['Database', 'Amazon DynamoDB', 'dynamodb', '#4053d6'], ['Database', 'Amazon ElastiCache', 'elasticache', '#c925d1'], ['Database', 'Amazon Redshift', 'redshift', '#8b3eb8'], ['Database', 'Amazon Neptune', 'neptune', '#00a1c9'],
@@ -263,14 +264,16 @@ const LEGACY_EDGE_LABELS = new Set(['contains', 'belongs-to', 'hosts', 'secured-
 
 function getNodeTypeFromId(id) {
   if (typeof id !== 'string') return '';
-  const dash = id.indexOf('-');
-  return dash > 0 ? id.slice(0, dash) : '';
+  const localId = id.split('::').at(-1);
+  const dash = localId.indexOf('-');
+  return dash > 0 ? localId.slice(0, dash) : '';
 }
 
 function getResourceId(id) {
   if (typeof id !== 'string') return '';
-  const dash = id.indexOf('-');
-  return dash > 0 ? id.slice(dash + 1) : id;
+  const localId = id.split('::').at(-1);
+  const dash = localId.indexOf('-');
+  return dash > 0 ? localId.slice(dash + 1) : localId;
 }
 
 function shortenCanvasText(value, maxLength = 20) {
@@ -341,8 +344,10 @@ function Icon({ name, size = 16 }) {
     cloud: <path d="M17.5 18.5H7a4.5 4.5 0 1 1 1.2-8.8A5.8 5.8 0 0 1 19 12a3.3 3.3 0 0 1-1.5 6.5Z" />,
     grid: <><rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1" /><rect x="14" y="3.5" width="6.5" height="6.5" rx="1" /><rect x="3.5" y="14" width="6.5" height="6.5" rx="1" /><rect x="14" y="14" width="6.5" height="6.5" rx="1" /></>,
     cursor: <path d="m5 3 14 8-6.2 1.8L11 19z" />,
+    pen: <><path d="m4 20 4.5-1 10.8-10.8-3.5-3.5L5 15.5 4 20Z" /><path d="m13.8 6.7 3.5 3.5M4 20h16" /></>,
     link: <><path d="M10.3 13.7a4 4 0 0 0 5.7.1l2.3-2.3a4 4 0 0 0-5.7-5.7l-1.3 1.3" /><path d="M13.7 10.3a4 4 0 0 0-5.7-.1l-2.3 2.3a4 4 0 0 0 5.7 5.7l1.3-1.3" /></>,
     search: <><circle cx="10.5" cy="10.5" r="5.7" /><path d="m15 15 4.2 4.2" /></>,
+    check: <path d="m5 12 4 4L19 6" />,
     layers: <><path d="m12 3 8.4 4.6L12 12.2 3.6 7.6zM3.6 12.1 12 16.7l8.4-4.6M3.6 16.6 12 21.2l8.4-4.6" /></>,
     chevronDown: <path d="m7 10 5 5 5-5" />,
     resizeHorizontal: <><path d="m8 7-5 5 5 5M16 7l5 5-5 5M3 12h18" /></>,
@@ -421,8 +426,12 @@ function PlanningWorkspace({ planning }) {
     canRedo
   } = planning;
   const [selectedId, setSelectedId] = useState(null);
-  const [connectionSource, setConnectionSource] = useState(null);
+  const [canvasTool, setCanvasTool] = useState('select');
+  const [connectionDrag, setConnectionDrag] = useState(null);
+  const [keyboardConnectionSource, setKeyboardConnectionSource] = useState(null);
   const [draggingId, setDraggingId] = useState(null);
+  const [nodePreview, setNodePreview] = useState(null);
+  const [panPreview, setPanPreview] = useState(null);
   const [paletteWidth, setPaletteWidth] = useState(252);
   const [isCanvasPanning, setIsCanvasPanning] = useState(false);
   const [removalHover, setRemovalHover] = useState(false);
@@ -436,19 +445,52 @@ function PlanningWorkspace({ planning }) {
   const canvasPanDidMoveRef = useRef(false);
   const paletteResizeRef = useRef(null);
   const categoryPickerRef = useRef(null);
+  const documentPickerRef = useRef(null);
+  const documentPickerTriggerRef = useRef(null);
   const paletteRef = useRef(null);
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const [documentMenuOpen, setDocumentMenuOpen] = useState(false);
+  useEffect(() => () => {
+    if (nodeInteractionRef.current?.frame != null) window.cancelAnimationFrame(nodeInteractionRef.current.frame);
+    if (canvasPanInteractionRef.current?.frame != null) window.cancelAnimationFrame(canvasPanInteractionRef.current.frame);
+  }, []);
   canvasZoomRef.current = canvasZoom;
-  canvasPanRef.current = canvasPan;
+  canvasPanRef.current = panPreview || canvasPan;
   const categories = ['All', ...new Set(PLANNING_SERVICES.map((service) => service.category))];
   const query = search.trim().toLowerCase();
   const availableServices = PLANNING_SERVICES.filter((service) => (selectedCategory === 'All' || service.category === selectedCategory) && (!query || service.name.toLowerCase().includes(query)));
+  const displayNodes = nodePreview ? nodes.map((node) => node.id === nodePreview.id ? { ...node, ...nodePreview } : node) : nodes;
+  const displayNodeById = new Map(displayNodes.map((node) => [node.id, node]));
+  const displayPan = panPreview || canvasPan;
   const selectedNode = nodes.find((node) => node.id === selectedId);
   const selectedNodeService = selectedNode ? PLANNING_SERVICES.find((service) => service.key === selectedNode.serviceKey) : null;
   const selectedServiceDetails = selectedNode ? PLANNING_SERVICE_DETAILS[selectedNode.serviceKey] : null;
   const selectedConnections = selectedNode
     ? edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id)
     : [];
+  const drawingSource = nodes.find((node) => node.id === connectionDrag?.sourceId);
+  const drawingTarget = nodes.find((node) => node.id === connectionDrag?.targetId);
+  const previewConnection = drawingSource && connectionDrag?.point ? (() => {
+    const sourceCenter = { x: drawingSource.x + (drawingSource.width || DEFAULT_PLANNING_NODE_WIDTH) / 2, y: drawingSource.y + (drawingSource.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 };
+    const targetCenter = drawingTarget
+      ? { x: drawingTarget.x + (drawingTarget.width || DEFAULT_PLANNING_NODE_WIDTH) / 2, y: drawingTarget.y + (drawingTarget.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 }
+      : connectionDrag.point;
+    const delta = { x: targetCenter.x - sourceCenter.x, y: targetCenter.y - sourceCenter.y };
+    const sourceScale = Math.min(
+      (drawingSource.width || DEFAULT_PLANNING_NODE_WIDTH) / 2 / Math.max(1, Math.abs(delta.x)),
+      (drawingSource.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 / Math.max(1, Math.abs(delta.y))
+    );
+    const targetScale = drawingTarget ? Math.min(
+      (drawingTarget.width || DEFAULT_PLANNING_NODE_WIDTH) / 2 / Math.max(1, Math.abs(delta.x)),
+      (drawingTarget.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 / Math.max(1, Math.abs(delta.y))
+    ) : 0;
+    return {
+      x1: sourceCenter.x + delta.x * sourceScale,
+      y1: sourceCenter.y + delta.y * sourceScale,
+      x2: targetCenter.x - delta.x * targetScale,
+      y2: targetCenter.y - delta.y * targetScale
+    };
+  })() : null;
   const libraryOptions = librarySummaries.some((summary) => summary.id === planningDocument.id)
     ? librarySummaries
     : [{
@@ -458,15 +500,43 @@ function PlanningWorkspace({ planning }) {
         nodeCount: nodes.length,
         edgeCount: edges.length
       }, ...librarySummaries];
+  const selectedArchitecture = libraryOptions.find((summary) => summary.id === planningDocument.id) || {
+    name: planningDocument.name,
+    nodeCount: nodes.length,
+    edgeCount: edges.length
+  };
 
   useEffect(() => {
     setNameDraft(planningDocument.name);
     setSelectedId(null);
-    setConnectionSource(null);
+    setConnectionDrag(null);
+    setKeyboardConnectionSource(null);
+    setNodePreview(null);
+    setPanPreview(null);
   }, [planningDocument.id, planningDocument.name]);
 
   const commitDocumentName = () => {
     if (!renameDocument(nameDraft)) setNameDraft(planningDocument.name);
+  };
+
+  const handleDocumentMenuKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setDocumentMenuOpen(false);
+      documentPickerTriggerRef.current?.focus();
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const options = [...(documentPickerRef.current?.querySelectorAll('[role="menuitemradio"]') || [])];
+    if (!options.length) return;
+    event.preventDefault();
+    const currentIndex = options.indexOf(document.activeElement);
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? options.length - 1
+        : (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+    options[nextIndex]?.focus();
   };
 
   const exportArchitectureSvg = () => {
@@ -531,6 +601,20 @@ function PlanningWorkspace({ planning }) {
   }, [categoryMenuOpen]);
 
   useEffect(() => {
+    if (!documentMenuOpen) return undefined;
+    const closeOnOutsidePress = (event) => {
+      if (!documentPickerRef.current?.contains(event.target)) setDocumentMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', closeOnOutsidePress);
+    return () => window.removeEventListener('pointerdown', closeOnOutsidePress);
+  }, [documentMenuOpen]);
+
+  useEffect(() => {
+    if (!documentMenuOpen) return;
+    documentPickerRef.current?.querySelector('[aria-checked="true"]')?.focus();
+  }, [documentMenuOpen]);
+
+  useEffect(() => {
     const handleShortcut = (event) => {
       const direction = getKeyboardZoomDirection(event);
       if (direction) {
@@ -567,28 +651,83 @@ function PlanningWorkspace({ planning }) {
     const service = PLANNING_SERVICES.find((item) => item.key === key);
     const rect = canvasRef.current?.getBoundingClientRect();
     if (service && rect) placeService(service, {
-      x: (event.clientX - rect.left - canvasPan.x) / canvasZoom - (DEFAULT_PLANNING_NODE_WIDTH / 2),
-      y: (event.clientY - rect.top - canvasPan.y) / canvasZoom - (DEFAULT_PLANNING_NODE_HEIGHT / 2)
+      x: (event.clientX - rect.left - displayPan.x) / canvasZoom - (DEFAULT_PLANNING_NODE_WIDTH / 2),
+      y: (event.clientY - rect.top - displayPan.y) / canvasZoom - (DEFAULT_PLANNING_NODE_HEIGHT / 2)
     });
+  };
+
+  const addConnection = (sourceId, targetId) => {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    setEdges((current) => current.some((edge) => edge.source === sourceId && edge.target === targetId)
+      ? current
+      : [...current, { id: `${sourceId}-${targetId}`, source: sourceId, target: targetId }]);
+  };
+
+  const canvasPointFromClient = (clientX, clientY) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+    return {
+      x: (clientX - rect.left - canvasPanRef.current.x) / canvasZoomRef.current,
+      y: (clientY - rect.top - canvasPanRef.current.y) / canvasZoomRef.current
+    };
+  };
+
+  const connectionTargetAt = (clientX, clientY, sourceId) => {
+    const element = document.elementFromPoint(clientX, clientY)?.closest('[data-planning-node-id]');
+    const targetId = element && canvasRef.current?.contains(element) ? element.dataset.planningNodeId : null;
+    return targetId && targetId !== sourceId ? targetId : null;
   };
 
   const handleNodeClick = (event, node) => {
     event.stopPropagation();
-    if (connectionSource === 'armed') {
-      setConnectionSource(node.id);
+    if (canvasTool === 'select') setSelectedId(node.id);
+  };
+
+  const handleNodeKeyDown = (event, node) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (canvasTool === 'select') {
       setSelectedId(node.id);
-    } else if (connectionSource && connectionSource !== node.id) {
-      setEdges((current) => current.some((edge) => edge.source === connectionSource && edge.target === node.id) ? current : [...current, { id: `${connectionSource}-${node.id}`, source: connectionSource, target: node.id }]);
-      setConnectionSource(null);
-    } else if (connectionSource === node.id) {
-      setConnectionSource(null);
+      return;
+    }
+    if (keyboardConnectionSource && keyboardConnectionSource !== node.id) {
+      addConnection(keyboardConnectionSource, node.id);
+      setKeyboardConnectionSource(null);
     } else {
-      setSelectedId(node.id);
+      setKeyboardConnectionSource((current) => current === node.id ? null : node.id);
     }
   };
 
+  const beginConnectionDrag = (event, node) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setKeyboardConnectionSource(null);
+    setSelectedId(node.id);
+    setConnectionDrag({ sourceId: node.id, pointerId: event.pointerId, point: canvasPointFromClient(event.clientX, event.clientY), targetId: null });
+  };
+
+  const moveConnectionDrag = (event) => {
+    setConnectionDrag((current) => current?.pointerId === event.pointerId ? {
+      ...current,
+      point: canvasPointFromClient(event.clientX, event.clientY),
+      targetId: connectionTargetAt(event.clientX, event.clientY, current.sourceId)
+    } : current);
+  };
+
+  const endConnectionDrag = (event, cancelled = false) => {
+    if (!connectionDrag || connectionDrag.pointerId !== event.pointerId) return;
+    if (!cancelled) addConnection(connectionDrag.sourceId, connectionTargetAt(event.clientX, event.clientY, connectionDrag.sourceId));
+    setConnectionDrag(null);
+  };
+
   const beginDrag = (event, node) => {
-    if (connectionSource || event.button !== 0) return;
+    if (event.button !== 0) return;
+    if (canvasTool === 'draw') {
+      beginConnectionDrag(event, node);
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -598,13 +737,19 @@ function PlanningWorkspace({ planning }) {
       startClientX: event.clientX,
       startClientY: event.clientY,
       startX: node.x,
-      startY: node.y
+      startY: node.y,
+      startWidth: node.width || DEFAULT_PLANNING_NODE_WIDTH,
+      startHeight: node.height || DEFAULT_PLANNING_NODE_HEIGHT,
+      paletteBounds: paletteRef.current?.getBoundingClientRect(),
+      latest: null,
+      frame: null
     };
     setDraggingId(node.id);
   };
 
   const beginNodeResize = (event, node) => {
     if (event.button !== 0) return;
+    if (canvasTool === 'draw') { event.stopPropagation(); return; }
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -613,8 +758,12 @@ function PlanningWorkspace({ planning }) {
       id: node.id,
       startClientX: event.clientX,
       startClientY: event.clientY,
+      startX: node.x,
+      startY: node.y,
       startWidth: node.width || DEFAULT_PLANNING_NODE_WIDTH,
-      startHeight: node.height || DEFAULT_PLANNING_NODE_HEIGHT
+      startHeight: node.height || DEFAULT_PLANNING_NODE_HEIGHT,
+      latest: null,
+      frame: null
     };
     setSelectedId(node.id);
   };
@@ -622,54 +771,61 @@ function PlanningWorkspace({ planning }) {
   const moveNode = (event) => {
     const interaction = nodeInteractionRef.current;
     if (!interaction || !canvasRef.current) return;
-    const paletteBounds = paletteRef.current?.getBoundingClientRect();
+    const paletteBounds = interaction.paletteBounds;
     const overRemovalZone = interaction.type === 'drag' && Boolean(paletteBounds && event.clientX >= paletteBounds.left && event.clientX <= paletteBounds.right && event.clientY >= paletteBounds.top && event.clientY <= paletteBounds.bottom);
     setRemovalHover((current) => current === overRemovalZone ? current : overRemovalZone);
-    const deltaX = (event.clientX - interaction.startClientX) / canvasZoom;
-    const deltaY = (event.clientY - interaction.startClientY) / canvasZoom;
-    setNodes((current) => current.map((node) => {
-      if (node.id !== interaction.id) return node;
-      if (interaction.type === 'resize') {
-        return {
-          ...node,
-          width: Math.max(MIN_PLANNING_NODE_WIDTH, Math.min(PLANNING_CANVAS_SIZE - node.x - 10, interaction.startWidth + deltaX)),
-          height: Math.max(MIN_PLANNING_NODE_HEIGHT, Math.min(PLANNING_CANVAS_SIZE - node.y - 10, interaction.startHeight + deltaY))
-        };
-      }
-      const nodeWidth = node.width || DEFAULT_PLANNING_NODE_WIDTH;
-      const nodeHeight = node.height || DEFAULT_PLANNING_NODE_HEIGHT;
-      return {
-        ...node,
-        x: Math.max(10, Math.min(PLANNING_CANVAS_SIZE - nodeWidth - 10, interaction.startX + deltaX)),
-        y: Math.max(10, Math.min(PLANNING_CANVAS_SIZE - nodeHeight - 10, interaction.startY + deltaY))
-      };
-    }));
+    const deltaX = (event.clientX - interaction.startClientX) / canvasZoomRef.current;
+    const deltaY = (event.clientY - interaction.startClientY) / canvasZoomRef.current;
+    const preview = interaction.type === 'resize' ? {
+      id: interaction.id,
+      width: Math.max(MIN_PLANNING_NODE_WIDTH, Math.min(PLANNING_CANVAS_SIZE - interaction.startX - 10, interaction.startWidth + deltaX)),
+      height: Math.max(MIN_PLANNING_NODE_HEIGHT, Math.min(PLANNING_CANVAS_SIZE - interaction.startY - 10, interaction.startHeight + deltaY))
+    } : {
+      id: interaction.id,
+      x: Math.max(10, Math.min(PLANNING_CANVAS_SIZE - interaction.startWidth - 10, interaction.startX + deltaX)),
+      y: Math.max(10, Math.min(PLANNING_CANVAS_SIZE - interaction.startHeight - 10, interaction.startY + deltaY))
+    };
+    interaction.latest = preview;
+    if (interaction.frame == null) interaction.frame = window.requestAnimationFrame(() => {
+      interaction.frame = null;
+      if (nodeInteractionRef.current === interaction) setNodePreview(interaction.latest);
+    });
   };
 
-  const endNodeInteraction = (event) => {
+  const endNodeInteraction = (event, cancelled = false) => {
     const interaction = nodeInteractionRef.current;
-    const paletteBounds = paletteRef.current?.getBoundingClientRect();
-    const droppedInPalette = interaction?.type === 'drag' && event && paletteBounds && event.clientX >= paletteBounds.left && event.clientX <= paletteBounds.right && event.clientY >= paletteBounds.top && event.clientY <= paletteBounds.bottom;
+    if (!interaction) return;
+    if (interaction.frame != null) window.cancelAnimationFrame(interaction.frame);
+    const paletteBounds = interaction.paletteBounds;
+    const droppedInPalette = !cancelled && interaction.type === 'drag' && event && paletteBounds && event.clientX >= paletteBounds.left && event.clientX <= paletteBounds.right && event.clientY >= paletteBounds.top && event.clientY <= paletteBounds.bottom;
     if (droppedInPalette) {
       setNodes((current) => current.filter((node) => node.id !== interaction.id));
       setEdges((current) => current.filter((edge) => edge.source !== interaction.id && edge.target !== interaction.id));
       setSelectedId((current) => current === interaction.id ? null : current);
-      setConnectionSource((current) => current === interaction.id ? null : current);
+      setKeyboardConnectionSource((current) => current === interaction.id ? null : current);
+    } else if (!cancelled && interaction.latest && (interaction.type === 'drag'
+      ? interaction.latest.x !== interaction.startX || interaction.latest.y !== interaction.startY
+      : interaction.latest.width !== interaction.startWidth || interaction.latest.height !== interaction.startHeight)) {
+      setNodes((current) => current.map((node) => node.id === interaction.id ? { ...node, ...interaction.latest } : node));
     }
     nodeInteractionRef.current = null;
+    setNodePreview(null);
     setRemovalHover(false);
     setDraggingId(null);
   };
 
   const beginCanvasPan = (event) => {
-    if (connectionSource || event.button !== 0 || event.target.closest('[data-planning-node]')) return;
+    if (event.button !== 0 || event.target.closest('[data-planning-node]')) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     canvasPanInteractionRef.current = {
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startX: canvasPan.x,
-      startY: canvasPan.y
+      startX: canvasPanRef.current.x,
+      startY: canvasPanRef.current.y,
+      bounds: canvasRef.current?.getBoundingClientRect(),
+      latest: null,
+      frame: null
     };
     canvasPanDidMoveRef.current = false;
     setIsCanvasPanning(true);
@@ -677,20 +833,30 @@ function PlanningWorkspace({ planning }) {
 
   const moveCanvasPan = (event) => {
     const interaction = canvasPanInteractionRef.current;
-    const rect = canvasRef.current?.getBoundingClientRect();
+    const rect = interaction?.bounds;
     if (!interaction || !rect) return;
-    const minX = Math.min(0, rect.width - PLANNING_CANVAS_SIZE * canvasZoom);
-    const minY = Math.min(0, rect.height - PLANNING_CANVAS_SIZE * canvasZoom);
+    const minX = Math.min(0, rect.width - PLANNING_CANVAS_SIZE * canvasZoomRef.current);
+    const minY = Math.min(0, rect.height - PLANNING_CANVAS_SIZE * canvasZoomRef.current);
     if (Math.abs(event.clientX - interaction.startClientX) > 2 || Math.abs(event.clientY - interaction.startClientY) > 2) canvasPanDidMoveRef.current = true;
-    setCanvasPan({
+    interaction.latest = {
       x: Math.min(0, Math.max(minX, interaction.startX + event.clientX - interaction.startClientX)),
       y: Math.min(0, Math.max(minY, interaction.startY + event.clientY - interaction.startClientY))
+    };
+    canvasPanRef.current = interaction.latest;
+    if (interaction.frame == null) interaction.frame = window.requestAnimationFrame(() => {
+      interaction.frame = null;
+      if (canvasPanInteractionRef.current === interaction) setPanPreview(interaction.latest);
     });
   };
 
-  const endCanvasPan = () => {
-    if (!canvasPanInteractionRef.current) return;
+  const endCanvasPan = (cancelled = false) => {
+    const interaction = canvasPanInteractionRef.current;
+    if (!interaction) return;
+    if (interaction.frame != null) window.cancelAnimationFrame(interaction.frame);
+    if (!cancelled && interaction.latest && (interaction.latest.x !== interaction.startX || interaction.latest.y !== interaction.startY)) setCanvasPan(interaction.latest);
+    else canvasPanRef.current = canvasPan;
     canvasPanInteractionRef.current = null;
+    setPanPreview(null);
     setIsCanvasPanning(false);
   };
 
@@ -700,7 +866,7 @@ function PlanningWorkspace({ planning }) {
       return;
     }
     setSelectedId(null);
-    if (connectionSource === 'armed') setConnectionSource(null);
+    setKeyboardConnectionSource(null);
   };
 
   const resizeSelectedNodeByKeyboard = (event, node) => {
@@ -753,7 +919,8 @@ function PlanningWorkspace({ planning }) {
     setNodes((current) => current.filter((node) => node.id !== nodeId));
     setEdges((current) => current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
     setSelectedId((current) => current === nodeId ? null : current);
-    setConnectionSource((current) => current === nodeId ? null : current);
+    setKeyboardConnectionSource((current) => current === nodeId ? null : current);
+    setConnectionDrag((current) => current?.sourceId === nodeId || current?.targetId === nodeId ? null : current);
   }, [setEdges, setNodes]);
 
   const removeEdge = useCallback((edgeId) => {
@@ -767,6 +934,16 @@ function PlanningWorkspace({ planning }) {
   useEffect(() => {
     const handlePlanningShortcut = (event) => {
       const target = event.target;
+      const isDocumentMenuItem = target instanceof HTMLElement && target.closest('[role="menuitemradio"]');
+      const isUndoRedoShortcut = (event.ctrlKey || event.metaKey)
+        && ['z', 'y'].includes(event.key.toLowerCase());
+      if (isDocumentMenuItem && !isUndoRedoShortcut) return;
+      if (event.key === 'Escape' && canvasTool === 'draw') {
+        setCanvasTool('select');
+        setConnectionDrag(null);
+        setKeyboardConnectionSource(null);
+        return;
+      }
       const isEditing = target instanceof HTMLElement
         && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
       if (isEditing) return;
@@ -790,13 +967,74 @@ function PlanningWorkspace({ planning }) {
     };
     window.addEventListener('keydown', handlePlanningShortcut);
     return () => window.removeEventListener('keydown', handlePlanningShortcut);
-  }, [redo, removeNode, selectedId, undo]);
+  }, [canvasTool, redo, removeNode, selectedId, undo]);
 
   return <>
     <div className={styles.planningToolbar}>
       <div><span className={styles.planningEyebrow}>Architecture workspace</span><h1>Design your AWS architecture</h1><p>Drag services onto the canvas, arrange them, then connect the flow.</p></div>
       <div className={styles.planningActions}>
-        <label className={styles.documentPicker}><span>Architecture</span><select value={planningDocument.id} onChange={(event) => openArchitecture(event.target.value)} aria-label="Open a saved architecture">{libraryOptions.map((summary) => <option key={summary.id} value={summary.id}>{summary.name} · {summary.nodeCount} service{summary.nodeCount === 1 ? '' : 's'}</option>)}</select></label>
+        <div className={`${styles.documentPicker} ${documentMenuOpen ? styles.documentPickerOpen : ''}`} ref={documentPickerRef}>
+          <span className={styles.documentPickerLabel}>Architecture</span>
+          <button
+            className={styles.documentPickerTrigger}
+            type="button"
+            ref={documentPickerTriggerRef}
+            aria-label={`Open architecture. Current: ${selectedArchitecture.name}, ${selectedArchitecture.nodeCount} ${selectedArchitecture.nodeCount === 1 ? 'service' : 'services'}`}
+            aria-expanded={documentMenuOpen}
+            aria-haspopup="menu"
+            aria-controls={documentMenuOpen ? 'architecture-menu' : undefined}
+            title={`${selectedArchitecture.name} · ${selectedArchitecture.nodeCount} service${selectedArchitecture.nodeCount === 1 ? '' : 's'}`}
+            onClick={() => setDocumentMenuOpen((open) => !open)}
+            onKeyDown={(event) => {
+              if (!documentMenuOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                event.preventDefault();
+                setDocumentMenuOpen(true);
+              }
+            }}
+          >
+            <span className={styles.documentPickerGlyph}><Icon name="layers" size={15} /></span>
+            <span className={styles.documentPickerName}>{selectedArchitecture.name}</span>
+            <span className={styles.documentPickerCount}>{selectedArchitecture.nodeCount} service{selectedArchitecture.nodeCount === 1 ? '' : 's'}</span>
+            <Icon name="chevronDown" size={15} />
+          </button>
+          {documentMenuOpen ? <div
+            className={styles.documentMenu}
+            id="architecture-menu"
+            role="menu"
+            aria-label="Saved architectures"
+            onKeyDown={handleDocumentMenuKeyDown}
+          >
+            <div className={styles.documentMenuHeader} role="presentation"><span>Saved architectures</span><small>{libraryOptions.length}</small></div>
+            <div className={styles.documentMenuList} role="group" aria-label="Architecture choices">
+              {libraryOptions.map((summary) => {
+                const isCurrent = summary.id === planningDocument.id;
+                const serviceCount = summary.nodeCount ?? 0;
+                const connectionCount = summary.edgeCount ?? 0;
+                return <button
+                  key={summary.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={isCurrent}
+                  aria-label={`${summary.name}, ${serviceCount} services, ${connectionCount} connections${isCurrent ? ', current architecture' : ''}`}
+                  className={`${styles.documentMenuOption} ${isCurrent ? styles.documentMenuOptionCurrent : ''}`}
+                  title={summary.name}
+                  onClick={() => {
+                    openArchitecture(summary.id);
+                    setDocumentMenuOpen(false);
+                    documentPickerTriggerRef.current?.focus();
+                  }}
+                >
+                  <span className={styles.documentMenuOptionGlyph}><Icon name="layers" size={16} /></span>
+                  <span className={styles.documentMenuOptionText}>
+                    <strong>{summary.name}</strong>
+                    <small>{serviceCount} service{serviceCount === 1 ? '' : 's'} <i>·</i> {connectionCount} connection{connectionCount === 1 ? '' : 's'}</small>
+                  </span>
+                  <span className={styles.documentMenuOptionCheck} aria-hidden="true">{isCurrent ? <Icon name="check" size={15} /> : null}</span>
+                </button>;
+              })}
+            </div>
+          </div> : null}
+        </div>
         <button className={styles.secondaryBtn} type="button" onClick={createNewArchitecture}><Icon name="plus" size={15} /> New architecture</button>
         <button className={styles.secondaryBtn} type="button" onClick={() => importInputRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
         <input ref={importInputRef} className={styles.hiddenFileInput} type="file" accept=".json,.awsome.json,.graphivo.json,application/json" onChange={handleImportFile} tabIndex={-1} />
@@ -804,7 +1042,6 @@ function PlanningWorkspace({ planning }) {
         <button className={styles.secondaryBtn} type="button" onClick={exportArchitectureSvg}><Icon name="download" size={15} /> Export SVG</button>
         <button className={styles.secondaryBtn} type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={15} /> Undo</button>
         <button className={styles.secondaryBtn} type="button" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)"><Icon name="redo" size={15} /> Redo</button>
-        <button className={`${styles.secondaryBtn} ${connectionSource ? styles.activeTool : ''}`} type="button" onClick={() => setConnectionSource((value) => value ? null : 'armed')}><Icon name="link" size={15} /> {connectionSource ? 'Cancel link' : 'Connect services'}</button>
         <button className={styles.secondaryBtn} type="button" onClick={() => deleteArchitecture(planningDocument.id)} title="Delete this architecture"><Icon name="trash" size={14} /> Delete</button>
         <span className={styles.nodeCount}>{nodes.length} service{nodes.length === 1 ? '' : 's'} placed</span>
       </div>
@@ -835,15 +1072,15 @@ function PlanningWorkspace({ planning }) {
         ><Icon name="resizeHorizontal" size={15} /></div>
       </aside>
       <section className={styles.planningCanvasPanel} aria-label="AWS architecture canvas">
-        <div className={styles.planningCanvasTop}><div className={styles.canvasTitle}><Icon name="layers" size={15} /><input aria-label="Architecture name" title="Rename architecture" maxLength={120} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={commitDocumentName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setNameDraft(planningDocument.name); event.currentTarget.blur(); } }} /><small>{feedback?.type === 'info' ? 'Saving' : lastSavedAt ? 'Saved' : 'Draft'}</small></div><div className={styles.canvasMeta}><span className={styles.canvasHint}>{connectionSource ? 'Select two services to create a connection' : 'Drop a service here to add it'}</span><span className={styles.zoomHint}>{Math.round(canvasZoom * 100)}% · Scroll to zoom</span></div></div>
-        <div className={`${styles.planningCanvas} ${isCanvasPanning ? styles.planningCanvasPanning : ''}`} ref={canvasRef} onPointerDown={beginCanvasPan} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop} onPointerMove={(event) => { moveCanvasPan(event); moveNode(event); }} onPointerUp={(event) => { endCanvasPan(); endNodeInteraction(event); }} onPointerCancel={(event) => { endCanvasPan(); endNodeInteraction(event); }} onClick={handleCanvasClick}>
-          <div className={styles.planningCanvasSurface} style={{ '--canvas-zoom': canvasZoom, '--canvas-pan-x': `${canvasPan.x}px`, '--canvas-pan-y': `${canvasPan.y}px` }}>
+        <div className={styles.planningCanvasTop}><div className={styles.canvasTitle}><Icon name="layers" size={15} /><input aria-label="Architecture name" title="Rename architecture" maxLength={120} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={commitDocumentName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setNameDraft(planningDocument.name); event.currentTarget.blur(); } }} /><small>{feedback?.text === 'Saving changes…' ? 'Saving' : lastSavedAt ? 'Saved' : 'Draft'}</small></div><div className={styles.canvasMeta}><div className={styles.planningToolSwitch} role="group" aria-label="Canvas tools"><button type="button" aria-pressed={canvasTool === 'select'} className={canvasTool === 'select' ? styles.planningToolActive : ''} onClick={() => { setCanvasTool('select'); setConnectionDrag(null); setKeyboardConnectionSource(null); }} title="Select and move services"><Icon name="cursor" size={15} />Select</button><button type="button" aria-pressed={canvasTool === 'draw'} className={canvasTool === 'draw' ? styles.planningToolActive : ''} onClick={() => { setCanvasTool('draw'); setConnectionDrag(null); setKeyboardConnectionSource(null); }} title="Draw a connection by dragging between services"><Icon name="pen" size={15} />Draw</button></div><span className={styles.zoomHint}>{Math.round(canvasZoom * 100)}% · Scroll to zoom</span></div></div>
+        <div className={`${styles.planningCanvas} ${isCanvasPanning ? styles.planningCanvasPanning : ''} ${canvasTool === 'draw' ? styles.planningCanvasDrawing : ''}`} ref={canvasRef} onPointerDown={beginCanvasPan} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop} onPointerMove={(event) => { moveCanvasPan(event); moveNode(event); moveConnectionDrag(event); }} onPointerUp={(event) => { endCanvasPan(); endNodeInteraction(event); endConnectionDrag(event); }} onPointerCancel={(event) => { endCanvasPan(true); endNodeInteraction(event, true); endConnectionDrag(event, true); }} onClick={handleCanvasClick}>
+          <div className={styles.planningCanvasSurface} style={{ '--canvas-zoom': canvasZoom, '--canvas-pan-x': `${displayPan.x}px`, '--canvas-pan-y': `${displayPan.y}px` }}>
           <div className={styles.canvasGrid} />
-          {edges.length ? <svg className={styles.connectionLayer} aria-hidden="true">
-            <defs><marker id="planning-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
+          {edges.length || previewConnection ? <svg className={styles.connectionLayer} aria-hidden="true">
+            <defs><marker id="planning-arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker><marker id="planning-preview-arrow" className={styles.previewMarker} viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
             {edges.map((edge) => {
-              const source = nodes.find((node) => node.id === edge.source);
-              const target = nodes.find((node) => node.id === edge.target);
+              const source = displayNodeById.get(edge.source);
+              const target = displayNodeById.get(edge.target);
               if (!source || !target) return null;
               const sourceCenter = { x: source.x + (source.width || DEFAULT_PLANNING_NODE_WIDTH) / 2, y: source.y + (source.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 };
               const targetCenter = { x: target.x + (target.width || DEFAULT_PLANNING_NODE_WIDTH) / 2, y: target.y + (target.height || DEFAULT_PLANNING_NODE_HEIGHT) / 2 };
@@ -865,21 +1102,21 @@ function PlanningWorkspace({ planning }) {
                 {edge.label ? <text x={(sourceCenter.x + targetCenter.x) / 2} y={(sourceCenter.y + targetCenter.y) / 2 - 7}>{edge.label}</text> : null}
               </g>;
             })}
+            {previewConnection ? <line className={styles.connectionPreview} {...previewConnection} /> : null}
           </svg> : null}
           {!nodes.length ? <div className={styles.planningEmpty}><span><Icon name="cursor" size={27} /></span><h2>Start with a service</h2><p>Choose an AWS service from the library and drag it here to start mapping your system.</p></div> : null}
-          {nodes.map((node) => <div
+          {displayNodes.map((node) => <div
             key={node.id}
             role="button"
             tabIndex={0}
             data-planning-node="true"
+            data-planning-node-id={node.id}
             aria-label={`${node.name} architecture node`}
-            className={`${styles.planningNode} ${selectedId === node.id ? styles.planningNodeSelected : ''} ${connectionSource === node.id ? styles.planningNodeSource : ''} ${draggingId === node.id ? styles.planningNodeDragging : ''}`}
+            className={`${styles.planningNode} ${selectedId === node.id ? styles.planningNodeSelected : ''} ${connectionDrag?.sourceId === node.id || keyboardConnectionSource === node.id ? styles.planningNodeSource : ''} ${connectionDrag?.targetId === node.id ? styles.planningNodeTarget : ''} ${draggingId === node.id ? styles.planningNodeDragging : ''}`}
             style={{ left: node.x, top: node.y, width: node.width || DEFAULT_PLANNING_NODE_WIDTH, height: node.height || DEFAULT_PLANNING_NODE_HEIGHT, ...getPlanningNodeVisualStyle(node) }}
             onPointerDown={(event) => beginDrag(event, node)}
             onClick={(event) => handleNodeClick(event, node)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') handleNodeClick(event, node);
-            }}
+            onKeyDown={(event) => handleNodeKeyDown(event, node)}
           >
             <PlanningServiceIcon service={PLANNING_SERVICES.find((service) => service.key === node.serviceKey)} /><span>{node.name}</span>
             <span
@@ -893,8 +1130,8 @@ function PlanningWorkspace({ planning }) {
               onKeyDown={(event) => resizeSelectedNodeByKeyboard(event, node)}
             ><Icon name="resizeDiagonal" size={15} /></span>
           </div>)}
-          {connectionSource === 'armed' ? <div className={styles.connectionHelper}>Choose the first service to connect</div> : null}
           </div>
+          <div className={`${styles.connectionHelper} ${canvasTool === 'draw' ? styles.connectionHelperDrawing : ''}`} role="status">{canvasTool === 'draw' ? keyboardConnectionSource ? 'Press Enter on another service to connect' : 'Drag between services to connect · Enter works with a keyboard' : 'Drag boxes to arrange them · choose Draw to connect'}</div>
         </div>
       </section>
       <aside className={styles.planningInspector} aria-label="Architecture details">
@@ -932,6 +1169,8 @@ export default function App() {
   const [mode, setMode] = useState('live');
   const [profile, setProfile] = useState('default');
   const [region, setRegion] = useState('ap-southeast-2');
+  const [additionalRegions, setAdditionalRegions] = useState([]);
+  const [customRegion, setCustomRegion] = useState('');
   const [availableProfiles, setAvailableProfiles] = useState(['default']);
   const [availableRegions, setAvailableRegions] = useState([]);
   const [sourceHint, setSourceHint] = useState('');
@@ -941,7 +1180,7 @@ export default function App() {
   const [currentSnapshotId, setCurrentSnapshotId] = useState('');
   const [comparison, setComparison] = useState(null);
   const [status, setStatus] = useState('Ready. Enter profile/region and click Load Topology.');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(() => window.awsomeMigrationWarning || '');
   const [loading, setLoading] = useState(false);
   const [topologyStats, setTopologyStats] = useState(null);
   const [topologyGraph, setTopologyGraph] = useState(null);
@@ -951,18 +1190,27 @@ export default function App() {
   const [resourceCounts, setResourceCounts] = useState({});
   const [liveSearch, setLiveSearch] = useState('');
   const [selectedLiveTypes, setSelectedLiveTypes] = useState([]);
+  const [selectedLiveRegions, setSelectedLiveRegions] = useState([]);
+  const [retentionCount, setRetentionCount] = useState(20);
+  const [cleanupPending, setCleanupPending] = useState(false);
   const [selectedNode, setSelectedNode] = useState(null);
   const [selectedEdge, setSelectedEdge] = useState(null);
   const [hoveredEdge, setHoveredEdge] = useState(null);
+  const [inspectorWidth, setInspectorWidth] = useState(258);
   const [pendingPlanImport, setPendingPlanImport] = useState(null);
   const [canFetchTopology, setCanFetchTopology] = useState(false);
   const planning = usePlanningDocument(PLANNING_SERVICES);
   const cyContainerRef = useRef(null);
+  const workspaceRef = useRef(null);
+  const inspectorResizeRef = useRef(null);
   const cyInstanceRef = useRef(null);
+  const renderedGraphRef = useRef(null);
   const filteredGraphRef = useRef(null);
   const liveDragAutoPanRef = useRef(null);
   const liveGraphFitFrameRef = useRef(null);
   const scanRequestRef = useRef(null);
+  const regionPickerRef = useRef(null);
+  const scanRegions = useMemo(() => normaliseScanRegions(region, additionalRegions), [region, additionalRegions]);
 
   useEffect(() => {
     try {
@@ -971,6 +1219,23 @@ export default function App() {
       // Theme persistence is best effort when browser storage is unavailable.
     }
   }, [theme]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => cyInstanceRef.current?.resize());
+    return () => window.cancelAnimationFrame(frame);
+  }, [inspectorWidth]);
+
+  useEffect(() => {
+    if (mode !== 'live' || !workspaceRef.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry.contentRect.width || window.matchMedia('(max-width: 680px)').matches) return;
+      const available = Math.max(220, Math.min(720, entry.contentRect.width - 292));
+      setInspectorWidth((current) => Math.min(current, available));
+      cyInstanceRef.current?.resize();
+    });
+    observer.observe(workspaceRef.current);
+    return () => observer.disconnect();
+  }, [mode, showLanding]);
 
   const stopLiveDragAutoPan = useCallback(() => {
     const state = liveDragAutoPanRef.current;
@@ -986,7 +1251,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setCanFetchTopology(Boolean(window.__TAURI__?.core?.invoke));
+    const invoke = window.awsomeDesktop?.invoke;
+    if (invoke) invoke('migration_status').then(() => setCanFetchTopology(true)).catch(() => setCanFetchTopology(false));
     return () => {
       stopLiveDragAutoPan();
       cancelLiveGraphFit();
@@ -995,7 +1261,7 @@ export default function App() {
   }, [cancelLiveGraphFit, stopLiveDragAutoPan]);
 
   useEffect(() => {
-    const invoke = window.__TAURI__?.core?.invoke;
+    const invoke = window.awsomeDesktop?.invoke;
     if (!invoke) return;
     invoke('list_profiles').then((names) => {
       if (Array.isArray(names) && names.length) setAvailableProfiles(names);
@@ -1009,7 +1275,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const invoke = window.__TAURI__?.core?.invoke;
+    const invoke = window.awsomeDesktop?.invoke;
     if (!invoke) return;
     let cancelled = false;
     setSourceHint('Checking enabled regions…');
@@ -1032,6 +1298,7 @@ export default function App() {
     stopLiveDragAutoPan();
     cancelLiveGraphFit();
     setHoveredEdge(null);
+    renderedGraphRef.current = null;
     if (cyInstanceRef.current) {
       cyInstanceRef.current.destroy();
       cyInstanceRef.current = null;
@@ -1061,14 +1328,17 @@ export default function App() {
     return true;
   }, []);
 
-  const renderGraph = useCallback(async (graph, attempt = 0) => {
+  const renderGraph = useCallback(async (graph, isCurrent, attempt = 0) => {
+    if (!isCurrent()) return;
     if (!cyContainerRef.current) throw new Error('Graph container not available');
     const { clientWidth: width, clientHeight: height } = cyContainerRef.current;
-    if ((width === 0 || height === 0) && attempt < 20) {
+    if (width === 0 || height === 0) {
+      if (attempt >= 20) throw new Error('Graph canvas did not become visible');
       await new Promise((resolve) => setTimeout(resolve, 100));
-      return renderGraph(graph, attempt + 1);
+      return renderGraph(graph, isCurrent, attempt + 1);
     }
     const cytoscape = (await import('cytoscape')).default;
+    if (!isCurrent()) return;
     const darkGraph = theme === 'dark';
     const graphColors = darkGraph
       ? {
@@ -1236,6 +1506,7 @@ export default function App() {
         id: nodeData.id,
         label: nodeData.label,
         type: nodeData.type || getNodeTypeFromId(nodeData.id),
+        region: nodeData.region,
         details: nodeData.details && typeof nodeData.details === 'object' ? nodeData.details : {}
       });
     });
@@ -1256,24 +1527,31 @@ export default function App() {
         setSelectedEdge(null);
       }
     });
+    renderedGraphRef.current = { graph, theme, container: cyContainerRef.current };
   }, [applyZoomedFit, destroyGraph, stopLiveDragAutoPan, theme]);
 
   const filteredTopologyGraph = useMemo(
-    () => filterLiveTopologyGraph(topologyGraph, { query: liveSearch, selectedTypes: selectedLiveTypes }),
-    [liveSearch, selectedLiveTypes, topologyGraph]
+    () => filterLiveTopologyGraph(topologyGraph, { query: liveSearch, selectedTypes: selectedLiveTypes, selectedRegions: selectedLiveRegions }),
+    [liveSearch, selectedLiveTypes, selectedLiveRegions, topologyGraph]
   );
   filteredGraphRef.current = filteredTopologyGraph;
-  const hasLiveFilters = Boolean(liveSearch.trim() || selectedLiveTypes.length);
+  const hasLiveFilters = Boolean(liveSearch.trim() || selectedLiveTypes.length || selectedLiveRegions.length);
 
   useEffect(() => {
-    if (mode !== 'live') {
-      const teardownTimer = window.setTimeout(destroyGraph, 180);
-      return () => window.clearTimeout(teardownTimer);
+    if (mode !== 'live' || !topologyGraph) return undefined;
+    const rendered = renderedGraphRef.current;
+    if (rendered?.graph === topologyGraph && rendered.theme === theme && rendered.container === cyContainerRef.current && !cyInstanceRef.current?.destroyed()) {
+      const frame = window.requestAnimationFrame(() => cyInstanceRef.current?.resize());
+      return () => window.cancelAnimationFrame(frame);
     }
-    if (!topologyGraph) return undefined;
-    const renderTimer = window.setTimeout(() => { renderGraph(topologyGraph).catch(() => {}); }, 0);
-    return () => window.clearTimeout(renderTimer);
-  }, [destroyGraph, mode, renderGraph, topologyGraph]);
+    let cancelled = false;
+    const renderTimer = window.setTimeout(() => {
+      renderGraph(topologyGraph, () => !cancelled).catch((error) => {
+        if (!cancelled) setError(`Could not draw topology: ${error?.message || error}`);
+      });
+    }, 0);
+    return () => { cancelled = true; window.clearTimeout(renderTimer); };
+  }, [mode, renderGraph, theme, topologyGraph]);
 
   useEffect(() => {
     const cy = cyInstanceRef.current;
@@ -1322,6 +1600,7 @@ export default function App() {
     setSelectedEdge(null);
     setLiveSearch('');
     setSelectedLiveTypes([]);
+    setSelectedLiveRegions([]);
     const nodes = Array.isArray(graph?.nodes) ? graph.nodes.length : 0;
     const edges = Array.isArray(graph?.edges) ? graph.edges.length : 0;
     const counts = (Array.isArray(graph?.nodes) ? graph.nodes : []).reduce((result, node) => {
@@ -1335,19 +1614,25 @@ export default function App() {
   }, []);
 
   const refreshSnapshotList = useCallback(async (preferredId = '') => {
-    const items = await window.__TAURI__.core.invoke('list_snapshots');
+    const items = await window.awsomeDesktop.invoke('list_snapshots');
     if (Array.isArray(items)) {
       setSnapshots(items);
       setSelectedSnapshotId(preferredId || items[0]?.id || '');
     }
+    return items;
   }, []);
 
   const fetchTopology = useCallback(async (isRefresh) => {
-    const invoke = window.__TAURI__?.core?.invoke;
+    const invoke = window.awsomeDesktop?.invoke;
     if (!invoke) {
-      setError('The Tauri backend is unavailable. Start awsome with `npm run dev`.');
+      setError('The Electron companion is unavailable. Start awsome with `npm run start`.');
       return;
     }
+    if (!scanRegions.length) {
+      setError('Choose at least one AWS region before scanning.');
+      return;
+    }
+    if (regionPickerRef.current) regionPickerRef.current.open = false;
     setError('');
     setLoading(true);
     if (topologyGraph) setSnapshotStale(true);
@@ -1364,11 +1649,13 @@ export default function App() {
           if (scanRequestRef.current === requestId && progress?.requestId === requestId) setScanProgress(progress);
         }).catch(() => {});
       }, 300);
-      const graph = await invoke('fetch_topology', { profile, region, requestId });
-      const context = { profile: profile.trim() || 'default', region: region.trim(), loadedAt: new Date().toISOString() };
+      const graph = await invoke('fetch_topology', { profile, regions: scanRegions, requestId });
+      const context = { profile: profile.trim() || 'default', region: scanRegions.join(', '), regions: scanRegions, loadedAt: new Date().toISOString() };
       const { nodes, edges, warnings } = showTopology(graph, context);
       try {
-        const previous = snapshots.find((item) => item.profile === context.profile && item.region === context.region);
+        let earlierScans = snapshots;
+        try { earlierScans = await invoke('list_snapshots'); } catch { /* Use the list already shown in the picker. */ }
+        const previous = earlierScans.find((item) => sameScanSource(item.profile, normaliseScanRegions('', item.region.split(',')), context.profile, scanRegions));
         const saved = await invoke('save_snapshot', { profile: context.profile, region: context.region, graph });
         setCurrentSnapshotId(saved.id);
         await refreshSnapshotList(saved.id);
@@ -1381,8 +1668,8 @@ export default function App() {
         return;
       }
       setStatus(warnings.length
-        ? `Topology loaded with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}: ${nodes} nodes, ${edges} connections.`
-        : `Topology loaded successfully: ${nodes} nodes, ${edges} connections.`);
+        ? `Topology loaded with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}: ${nodes} resources, ${edges} connection${edges === 1 ? '' : 's'}.`
+        : `Topology loaded successfully: ${nodes} resources, ${edges} connection${edges === 1 ? '' : 's'}.`);
     } catch (err) {
       const message = err?.message || String(err);
       if (message === 'Scan cancelled') {
@@ -1400,46 +1687,84 @@ export default function App() {
       setScanProgress(null);
       setLoading(false);
     }
-  }, [profile, region, refreshSnapshotList, showTopology, snapshots, topologyGraph]);
+  }, [profile, refreshSnapshotList, scanRegions, showTopology, snapshots, topologyGraph]);
 
   const cancelTopologyScan = useCallback(async () => {
     const requestId = scanRequestRef.current;
     if (!requestId) return;
     setStatus('Cancelling scan…');
-    try { await window.__TAURI__.core.invoke('cancel_scan', { requestId }); } catch { /* The scan may have finished. */ }
+    try { await window.awsomeDesktop.invoke('cancel_scan', { requestId }); } catch { /* The scan may have finished. */ }
   }, []);
 
   const openSavedSnapshot = useCallback(async () => {
     if (!selectedSnapshotId) return;
     try {
-      const saved = await window.__TAURI__.core.invoke('load_snapshot', { id: selectedSnapshotId });
-      const context = { profile: saved.profile, region: saved.region, loadedAt: new Date(Number(saved.capturedAt)).toISOString() };
+      const saved = await window.awsomeDesktop.invoke('load_snapshot', { id: selectedSnapshotId });
+      const regions = graphRegions(saved.graph, saved.region);
+      const context = { profile: saved.profile, region: regions.join(', '), regions, loadedAt: new Date(Number(saved.capturedAt)).toISOString() };
       const { nodes, edges } = showTopology(saved.graph, context, saved.id);
+      setProfile(saved.profile);
+      setRegion(regions[0] || 'ap-southeast-2');
+      setAdditionalRegions(regions.slice(1));
       setComparison(null);
       setError('');
-      setStatus(`Opened saved snapshot: ${nodes} resources, ${edges} connections.`);
+      setStatus(`Opened saved snapshot: ${nodes} resources, ${edges} connection${edges === 1 ? '' : 's'}.`);
     } catch (err) { setError(`Could not open snapshot: ${err?.message || err}`); }
   }, [selectedSnapshotId, showTopology]);
 
   const compareSavedSnapshot = useCallback(async () => {
     if (!selectedSnapshotId || !topologyGraph) return;
     try {
-      const baseline = await window.__TAURI__.core.invoke('load_snapshot', { id: selectedSnapshotId });
+      const baseline = await window.awsomeDesktop.invoke('load_snapshot', { id: selectedSnapshotId });
+      if (!sameScanSource(baseline.profile, graphRegions(baseline.graph, baseline.region), topologyContext?.profile, graphRegions(topologyGraph, topologyContext?.region))) {
+        throw new Error('Choose a saved scan from the same profile and regions to compare.');
+      }
       setComparison({ baseline, diff: compareTopologySnapshots(baseline.graph, topologyGraph) });
       setError('');
     } catch (err) { setError(`Could not compare snapshots: ${err?.message || err}`); }
-  }, [selectedSnapshotId, topologyGraph]);
+  }, [selectedSnapshotId, topologyContext, topologyGraph]);
 
   const deleteSavedSnapshot = useCallback(async () => {
     if (!selectedSnapshotId) return;
+    const selected = snapshots.find((item) => item.id === selectedSnapshotId);
+    if (!selected) {
+      setError('The selected saved scan is no longer available.');
+      return;
+    }
+    const message = `Delete this saved scan from this device?\n\n${selected.profile} / ${selected.region}\n${new Date(Number(selected.capturedAt)).toLocaleString()}\nScan ID: ${selected.id}\n\nThis cannot be undone.`;
+    if (!window.confirm(message)) return;
     try {
-      await window.__TAURI__.core.invoke('delete_snapshot', { id: selectedSnapshotId });
+      await window.awsomeDesktop.invoke('delete_snapshot', { id: selectedSnapshotId });
       if (currentSnapshotId === selectedSnapshotId) setCurrentSnapshotId('');
       setComparison(null);
       await refreshSnapshotList();
       setStatus('Saved snapshot deleted.');
     } catch (err) { setError(`Could not delete snapshot: ${err?.message || err}`); }
-  }, [currentSnapshotId, refreshSnapshotList, selectedSnapshotId]);
+  }, [currentSnapshotId, refreshSnapshotList, selectedSnapshotId, snapshots]);
+
+  const pruneSavedSnapshots = useCallback(async () => {
+    if (cleanupPending) return;
+    setCleanupPending(true);
+    setError('');
+    try {
+      const invoke = window.awsomeDesktop.invoke;
+      const expected = await invoke('preview_prune_snapshots', { keepPerSource: retentionCount });
+      if (!expected.length) {
+        setStatus('No older saved scans need cleanup.');
+        return;
+      }
+      const candidates = expected.map((item) => `${item.profile} / ${item.region} · ${new Date(Number(item.capturedAt)).toLocaleString()} · ${item.id}`).join('\n');
+      const message = `Keep the newest ${retentionCount} scans per profile and region set?\n\nDelete these ${expected.length} saved scans from this device:\n${candidates}\n\nThis cannot be undone.`;
+      if (!window.confirm(message)) return;
+      const removed = await invoke('prune_snapshots', { keepPerSource: retentionCount, expected });
+      const remaining = await refreshSnapshotList();
+      if (currentSnapshotId && !remaining.some((item) => item.id === currentSnapshotId)) setCurrentSnapshotId('');
+      setComparison(null);
+      setError('');
+      setStatus(`Removed ${removed} older saved scan${removed === 1 ? '' : 's'}.`);
+    } catch (err) { setError(`Could not clean up scans: ${err?.message || err}`); }
+    finally { setCleanupPending(false); }
+  }, [cleanupPending, currentSnapshotId, refreshSnapshotList, retentionCount]);
 
   const switchMode = useCallback((nextMode) => {
     if (nextMode === mode) return;
@@ -1487,6 +1812,15 @@ export default function App() {
     : null;
   const selectedNodeHidden = selectedNode && !filteredTopologyGraph.nodes.some((node) => node.data.id === selectedNode.id);
   const selectedEdgeHidden = selectedEdge && !filteredTopologyGraph.edges.some((edge) => edge.data.id === selectedEdge.id);
+  const topologyRegions = graphRegions(topologyGraph, topologyContext?.region);
+  const toggleAdditionalRegion = (name) => {
+    setAdditionalRegions((current) => current.includes(name) ? current.filter((item) => item !== name) : [...current, name]);
+  };
+  const addCustomRegion = () => {
+    const name = customRegion.trim().toLowerCase();
+    if (name && name !== region.trim().toLowerCase() && !additionalRegions.includes(name)) setAdditionalRegions((current) => [...current, name]);
+    setCustomRegion('');
+  };
   const toggleLiveResourceType = (type) => {
     setSelectedLiveTypes((current) => current.includes(type)
       ? current.filter((selected) => selected !== type)
@@ -1495,6 +1829,40 @@ export default function App() {
   const clearLiveFilters = () => {
     setLiveSearch('');
     setSelectedLiveTypes([]);
+    setSelectedLiveRegions([]);
+  };
+  const maxInspectorWidth = () => Math.max(220, Math.min(720, (workspaceRef.current?.clientWidth || 1012) - 292));
+  const beginInspectorResize = (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    inspectorResizeRef.current = { pointerId: event.pointerId, handle: event.currentTarget, startX: event.clientX, startWidth: inspectorWidth, maxWidth: maxInspectorWidth(), width: inspectorWidth, frame: null };
+  };
+  const moveInspectorResize = (event) => {
+    const resize = inspectorResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    resize.width = Math.max(220, Math.min(resize.maxWidth, resize.startWidth + resize.startX - event.clientX));
+    if (resize.frame == null) {
+      resize.frame = window.requestAnimationFrame(() => {
+        workspaceRef.current?.style.setProperty('--inspector-width', `${resize.width}px`);
+        resize.handle.setAttribute('aria-valuenow', String(Math.round(resize.width)));
+        resize.frame = null;
+      });
+    }
+  };
+  const endInspectorResize = (event) => {
+    const resize = inspectorResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    if (resize.frame != null) window.cancelAnimationFrame(resize.frame);
+    workspaceRef.current?.style.setProperty('--inspector-width', `${resize.width}px`);
+    resize.handle.setAttribute('aria-valuenow', String(Math.round(resize.width)));
+    inspectorResizeRef.current = null;
+    setInspectorWidth(resize.width);
+  };
+  const resizeInspectorByKeyboard = (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    setInspectorWidth((current) => Math.max(220, Math.min(maxInspectorWidth(), current + (event.key === 'ArrowLeft' ? 20 : -20))));
   };
 
   if (showLanding) return <Landing onComplete={() => setShowLanding(false)} />;
@@ -1504,14 +1872,15 @@ export default function App() {
       <header className={styles.topbar}>
         <div className={styles.brandLockup}><span className={styles.brandMark}><img src={logo} alt="" aria-hidden="true" draggable="false" /></span><div><span className={styles.brandName}>awsome</span><span className={styles.brandCaption}>AWS topology explorer</span></div></div>
         <nav className={styles.modeSwitch} aria-label="Workspace mode"><button type="button" className={mode === 'live' ? styles.modeActive : ''} onClick={() => switchMode('live')}><i />Live mode</button><button type="button" className={mode === 'planning' ? styles.modeActive : ''} onClick={() => switchMode('planning')}><Icon name="grid" size={14} />Planning mode</button></nav>
-        <div className={styles.topbarMeta}><button type="button" className={styles.themeToggle} aria-pressed={theme === 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={17} /><span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span></button><span className={`${styles.connectionState} ${canFetchTopology ? styles.connectionReady : styles.connectionOffline}`}><i /> {canFetchTopology ? 'Native backend ready' : 'Tauri backend unavailable'}</span></div>
+        <div className={styles.topbarMeta}><button type="button" className={styles.themeToggle} aria-pressed={theme === 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={17} /><span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span></button><span className={`${styles.connectionState} ${canFetchTopology ? styles.connectionReady : styles.connectionOffline}`}><i /> {canFetchTopology ? 'Native backend ready' : 'Electron companion unavailable'}</span></div>
       </header>
-      <div key={mode} className={styles.modeStage}>
-      {mode === 'planning' ? <PlanningWorkspace planning={planning} /> : <>
+      {mode === 'planning' ? <div className={styles.modeStage}><PlanningWorkspace planning={planning} /></div> : null}
+      <div className={styles.modeStage} hidden={mode !== 'live'}>
       <div className={styles.toolbarCard}>
         <div className={styles.sourceLabel}><Icon name="database" size={15} /><span>Data source</span></div>
-        <div className={styles.fieldGroup}><label htmlFor="aws-profile">AWS profile</label><input id="aws-profile" list="aws-profile-options" value={profile} onChange={(event) => setProfile(event.target.value)} disabled={loading} autoComplete="off" /><datalist id="aws-profile-options">{availableProfiles.map((name) => <option key={name} value={name} />)}</datalist></div>
-        <div className={styles.fieldGroup}><label htmlFor="aws-region">Region</label><input id="aws-region" list="aws-region-options" value={region} onChange={(event) => setRegion(event.target.value)} disabled={loading} autoComplete="off" /><datalist id="aws-region-options">{availableRegions.map((name) => <option key={name} value={name} />)}</datalist></div>
+        <div className={styles.fieldGroup}><label htmlFor="aws-profile">AWS profile</label><input id="aws-profile" list="aws-profile-options" value={profile} onChange={(event) => { setProfile(event.target.value); setAdditionalRegions([]); }} disabled={loading} autoComplete="off" /><datalist id="aws-profile-options">{availableProfiles.map((name) => <option key={name} value={name} />)}</datalist></div>
+        <div className={styles.fieldGroup}><label htmlFor="aws-region">Primary region</label><input id="aws-region" list="aws-region-options" value={region} onChange={(event) => { const next = event.target.value; setRegion(next); setAdditionalRegions((current) => current.filter((name) => name !== next.trim().toLowerCase())); }} disabled={loading} autoComplete="off" /><datalist id="aws-region-options">{availableRegions.map((name) => <option key={name} value={name} />)}</datalist></div>
+        <div className={styles.regionPicker}><details ref={regionPickerRef}><summary>More regions{additionalRegions.length ? ` (${additionalRegions.length})` : ''}</summary><div className={styles.regionOptions}><strong>Scan additional regions</strong><p>Select enabled regions or enter another region code.</p><div className={styles.regionOptionList}>{availableRegions.filter((name) => name !== region.trim()).map((name) => <label key={name}><input type="checkbox" checked={additionalRegions.includes(name)} disabled={loading} onChange={() => toggleAdditionalRegion(name)} />{name}</label>)}</div><div className={styles.regionCustomInput}><input value={customRegion} onChange={(event) => setCustomRegion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCustomRegion(); } }} disabled={loading} placeholder="Region code" aria-label="Additional region code" /><button type="button" disabled={loading || !customRegion.trim()} onClick={addCustomRegion}>Add</button></div>{additionalRegions.length ? <div className={styles.regionSelections}>{additionalRegions.map((name) => <button key={name} type="button" disabled={loading} onClick={() => toggleAdditionalRegion(name)} aria-label={`Remove ${name} from scan`}>{name} ×</button>)}</div> : null}</div></details></div>
         <label className={styles.liveSearchBox}><Icon name="search" size={15} /><span>Find resource</span><input value={liveSearch} onChange={(event) => setLiveSearch(event.target.value)} disabled={loading || !topologyGraph} placeholder="Name, ID, detail…" aria-label="Search live topology resources" /></label>
         <div className={styles.actionsGroup}>
           <button className={styles.secondaryBtn} disabled={loading || !topologyGraph} onClick={openTopologyInPlanning}><Icon name="grid" size={15} /> Open in planning</button>
@@ -1521,7 +1890,7 @@ export default function App() {
         </div>
       </div>
       <div className={styles.snapshotBar}>
-        <div className={styles.snapshotSourceHint}>{sourceHint}</div>
+        <div className={styles.snapshotSourceHint}>{scanRegions.length} selected region{scanRegions.length === 1 ? '' : 's'}{sourceHint ? ` · ${sourceHint}` : ''}</div>
         <label htmlFor="saved-snapshot">Saved scans</label>
         <select id="saved-snapshot" value={selectedSnapshotId} onChange={(event) => setSelectedSnapshotId(event.target.value)} disabled={loading || !snapshots.length}>
           {!snapshots.length ? <option value="">No saved scans</option> : snapshots.map((item) => <option key={item.id} value={item.id}>{item.profile} / {item.region} · {new Date(Number(item.capturedAt)).toLocaleString()} · {item.nodes} resources</option>)}
@@ -1529,17 +1898,19 @@ export default function App() {
         <button className={styles.secondaryBtn} type="button" disabled={loading || !selectedSnapshotId} onClick={openSavedSnapshot}>Open offline</button>
         <button className={styles.secondaryBtn} type="button" disabled={loading || !selectedSnapshotId || !topologyGraph} onClick={compareSavedSnapshot}>Compare</button>
         <button className={styles.secondaryBtn} type="button" disabled={loading || !selectedSnapshotId} onClick={deleteSavedSnapshot} aria-label="Delete selected saved scan"><Icon name="trash" size={15} /></button>
+        <details className={styles.retentionMenu}><summary>Storage</summary><div><strong>{snapshots.length} saved scans · {(snapshots.reduce((sum, item) => sum + (item.bytes || 0), 0) / 1024 / 1024).toFixed(1)} MB</strong><label>Keep newest per source<select value={retentionCount} onChange={(event) => setRetentionCount(Number(event.target.value))}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option></select></label><button className={styles.secondaryBtn} type="button" disabled={loading || cleanupPending || !snapshots.length} onClick={pruneSavedSnapshots}>{cleanupPending ? 'Checking saved scans…' : 'Review cleanup'}</button></div></details>
       </div>
-      {error ? <div className={styles.errorBanner} role="alert"><Icon name="info" size={17} /><div><strong>Could not load topology</strong><p>{error.replace('Failed to load topology: ', '')}</p></div></div> : null}
+      {error ? <div className={styles.errorBanner} role="alert"><Icon name="info" size={17} /><div><strong>Could not complete action</strong><p>{error.replace('Failed to load topology: ', '')}</p></div></div> : null}
       {snapshotStale && !loading && topologyContext ? <div className={styles.warningBanner} role="status"><Icon name="info" size={17} /><div><strong>Showing a previous snapshot</strong><p>The latest load failed. This graph still shows {topologyContext.profile} in {topologyContext.region} from {new Date(topologyContext.loadedAt).toLocaleString()}.</p></div></div> : null}
       {topologyWarnings.length ? <section className={styles.warningBanner} role="status" aria-live="polite" aria-label="Incomplete AWS inventory warnings"><Icon name="info" size={17} /><div><strong>{snapshotStale ? 'Previous snapshot had incomplete inventory' : 'Topology loaded with incomplete inventory'}</strong><p>Some AWS resources could not be read. The displayed topology includes all successfully discovered resources.</p><ul>{topologyWarnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></section> : null}
-      <div className={styles.workspaceMeta}><div><strong>{snapshotStale && !loading ? 'Previous snapshot' : 'Topology'}</strong><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connections` : 'No topology loaded'}{topologyContext ? ` · ${topologyContext.profile} / ${topologyContext.region} · ${currentSnapshotId ? 'saved' : 'loaded'} ${new Date(topologyContext.loadedAt).toLocaleString()}` : ''}</span></div><div className={styles.status} role="status"><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</div></div>
-      <div className={styles.workspace}>
+      {topologyRegions.length > 1 ? <div className={styles.regionFilterBar} role="group" aria-label="Filter topology by region"><span>Regions</span><button type="button" className={!selectedLiveRegions.length ? styles.regionFilterActive : ''} onClick={() => setSelectedLiveRegions([])}>All</button>{topologyRegions.map((name) => <button key={name} type="button" className={selectedLiveRegions.length === 1 && selectedLiveRegions[0] === name ? styles.regionFilterActive : ''} onClick={() => setSelectedLiveRegions([name])}>{name} · {topologyGraph.nodes.filter((node) => node.data.region === name).length}</button>)}</div> : null}
+      <div className={styles.workspaceMeta}><div><strong>{snapshotStale && !loading ? 'Previous snapshot' : 'Topology'}</strong><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connection${topologyStats.edges === 1 ? '' : 's'}` : 'No topology loaded'}{topologyContext ? ` · ${topologyContext.profile} / ${topologyContext.region} · ${currentSnapshotId ? 'saved' : 'loaded'} ${new Date(topologyContext.loadedAt).toLocaleString()}` : ''}</span></div><div className={styles.status} role="status"><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</div></div>
+      <div ref={workspaceRef} className={styles.workspace} style={{ '--inspector-width': `${inspectorWidth}px` }}>
         <section className={styles.graphPanel} aria-label="AWS topology graph">
           <div className={styles.canvasTools}><div className={styles.legend} aria-label="Filter topology by resource type">{activeLegendItems.map((type) => <button key={type} type="button" className={selectedLiveTypes.length && !selectedLiveTypes.includes(type) ? styles.legendFilterInactive : ''} aria-pressed={!selectedLiveTypes.length || selectedLiveTypes.includes(type)} onClick={() => toggleLiveResourceType(type)} title={`Show only ${SERVICE_MAP[type].heading} resources`}><i style={{ backgroundColor: SERVICE_MAP[type].fallbackColor }} />{SERVICE_MAP[type].heading}</button>)}</div><div className={styles.canvasToolActions}><button className={styles.iconButton} type="button" onClick={focusFirstResult} disabled={!filteredTopologyGraph.nodes.length} aria-label="Focus first matching resource" title="Focus first matching resource"><Icon name="cursor" size={16} /></button><button className={styles.iconButton} type="button" onClick={applyZoomedFit} aria-label="Fit topology to view" title="Fit topology to view"><Icon name="fit" size={16} /></button></div></div>
           {!topologyStats && !loading ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="cloud" size={26} /></span><h1>Map your AWS infrastructure</h1><p>Choose a local AWS profile and region, then load the live resource relationships.</p><button className={styles.primaryBtn} type="button" onClick={() => fetchTopology(false)}><Icon name="network" size={15} /> Load topology</button></div> : null}
-          {topologyStats && !loading && !filteredTopologyGraph.nodes.length ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="search" size={26} /></span><h1>{hasLiveFilters ? 'No matching resources' : 'No resources found'}</h1><p>{hasLiveFilters ? 'Adjust the search or resource-type filters to see more of this topology.' : 'The selected region has no discovered resources in the supported inventory.'}</p>{hasLiveFilters ? <button className={styles.secondaryBtn} type="button" onClick={clearLiveFilters}>Clear filters</button> : null}</div> : null}
-          {loading ? <div className={styles.loadingOverlay}><span className={styles.loadingPulse} /> {scanProgress ? `${scanProgress.completed} of ${scanProgress.total} steps · ${scanProgress.stage}` : 'Connecting to AWS…'}</div> : null}
+          {topologyStats && !loading && !filteredTopologyGraph.nodes.length ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="search" size={26} /></span><h1>{hasLiveFilters ? 'No matching resources' : 'No resources found'}</h1><p>{hasLiveFilters ? 'Adjust the search or resource-type filters to see more of this topology.' : 'The selected regions have no discovered resources in the supported inventory.'}</p>{hasLiveFilters ? <button className={styles.secondaryBtn} type="button" onClick={clearLiveFilters}>Clear filters</button> : null}</div> : null}
+          {loading ? <div className={styles.loadingOverlay} role="status" aria-live="polite"><div className={styles.scanProgressHeading}><span className={styles.loadingPulse} />{scanProgress?.regions?.length ? `${scanProgress.regions.filter((item) => item.status === 'succeeded' || item.status === 'failed').length} of ${scanProgress.regions.length} regions finished` : 'Connecting to AWS…'}</div>{scanProgress?.regions?.length ? <ul className={styles.scanRegionList}>{scanProgress.regions.map((item) => <li key={item.region}><strong>{item.region}</strong><span className={item.status === 'failed' ? styles.scanRegionFailed : ''}>{item.status === 'queued' ? 'Waiting' : item.status === 'succeeded' ? 'Complete' : item.status === 'failed' ? 'Failed' : `${item.completed} of ${item.total} · ${item.stage}`}</span></li>)}</ul> : null}</div> : null}
           <div
             ref={cyContainerRef}
             className={`${styles.cy} ${topologyGraph ? styles.cyInteractive : ''}`}
@@ -1547,16 +1918,19 @@ export default function App() {
           />
           {hoveredEdge ? <div className={styles.edgeHint}><strong>Relationship</strong><span>{hoveredEdge.label}</span></div> : null}
         </section>
+        <div className={styles.inspectorShell}>
+        <div className={styles.inspectorResizeHandle} role="separator" aria-label="Resize topology details" aria-orientation="vertical" aria-valuemin="220" aria-valuemax={maxInspectorWidth()} aria-valuenow={Math.round(inspectorWidth)} tabIndex={0} onPointerDown={beginInspectorResize} onPointerMove={moveInspectorResize} onPointerUp={endInspectorResize} onPointerCancel={endInspectorResize} onKeyDown={resizeInspectorByKeyboard} title="Drag left or right to resize details"><Icon name="resizeHorizontal" size={15} /></div>
         <aside className={styles.inspector} aria-label="Topology details">
           {comparison ? <section className={styles.comparisonPanel} aria-label="Snapshot comparison">
             <div><strong>Snapshot changes</strong><button type="button" onClick={() => setComparison(null)} aria-label="Close comparison"><Icon name="close" size={15} /></button></div>
             <p>Compared with {comparison.baseline.profile} / {comparison.baseline.region} from {new Date(Number(comparison.baseline.capturedAt)).toLocaleString()}</p>
-            <p>{snapshotChangeCount(comparison.diff) === 0 ? 'No resource or relationship changes.' : `Resources: ${comparison.diff.nodes.added.length} added, ${comparison.diff.nodes.removed.length} removed, ${comparison.diff.nodes.changed.length} changed. Relationships: ${comparison.diff.edges.added.length} added, ${comparison.diff.edges.removed.length} removed, ${comparison.diff.edges.changed.length} changed.`}</p>
+            <p>{snapshotChangeCount(comparison.diff) === 0 ? 'No confirmed resource or relationship changes.' : `Resources: ${comparison.diff.nodes.added.length} added, ${comparison.diff.nodes.removed.length} removed, ${comparison.diff.nodes.changed.length} changed. Relationships: ${comparison.diff.edges.added.length} added, ${comparison.diff.edges.removed.length} removed, ${comparison.diff.edges.changed.length} changed.`}</p>
+            {snapshotUncertainCount(comparison.diff) || comparison.baseline.warnings || comparison.baseline.graph?.warnings?.length || topologyGraph?.warnings?.length ? <p className={styles.comparisonCaution}>Incomplete inventory in one scan: {snapshotUncertainCount(comparison.diff)} resource or relationship entries were excluded from the change counts. Missing data is not reported as a deletion.</p> : null}
             {snapshotChangeCount(comparison.diff) > 0 ? <div className={styles.changeList}>{[['Added resources', comparison.diff.nodes.added], ['Removed resources', comparison.diff.nodes.removed], ['Changed resources', comparison.diff.nodes.changed.map((item) => item.after)], ['Added relationships', comparison.diff.edges.added], ['Removed relationships', comparison.diff.edges.removed], ['Changed relationships', comparison.diff.edges.changed.map((item) => item.after)]].filter(([, items]) => items.length).map(([label, items]) => <div key={label}><strong>{label}</strong><span>{items.map((item) => item.source ? `${item.label || item.id} (${item.source} → ${item.target})` : item.label || item.id).join(' · ')}</span></div>)}</div> : null}
-          </section> : selectedNode ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: selectedService.fallbackColor }} />{selectedService.heading}</div><button className={styles.closeButton} type="button" onClick={() => setSelectedNode(null)} aria-label="Close resource details"><Icon name="close" size={15} /></button></div><h2>{selectedNode.label || getResourceId(selectedNode.id)}</h2>{selectedNodeHidden ? <p className={styles.filteredSelectionNote}>Hidden by the current filter</p> : null}<dl className={styles.detailsList}><div><dt>Resource ID</dt><dd>{getResourceId(selectedNode.id)}</dd></div><div><dt>Resource type</dt><dd>{selectedService.heading}</dd></div>{Object.entries(selectedNode.details || {}).filter(([, value]) => value !== null && value !== undefined && value !== '').map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{formatDetailValue(value)}</dd></div>)}<div><dt>Region</dt><dd>{topologyContext?.region || 'unknown'}</dd></div><div><dt>Profile</dt><dd>{topologyContext?.profile || 'unknown'}</dd></div></dl></> : selectedEdge ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: '#4f83cc' }} />Relationship</div><button className={styles.closeButton} type="button" onClick={() => setSelectedEdge(null)} aria-label="Close relationship details"><Icon name="close" size={15} /></button></div><h2>{selectedEdge.label}</h2>{selectedEdgeHidden ? <p className={styles.filteredSelectionNote}>Hidden by the current filter</p> : null}<dl className={styles.detailsList}><div><dt>From</dt><dd>{selectedEdge.source}</dd></div><div><dt>To</dt><dd>{selectedEdge.target}</dd></div></dl></> : <div className={styles.inspectorEmpty}><span><Icon name="info" size={20} /></span><h2>Topology details</h2><p>Select a node or connection to inspect its full details.</p></div>}
+          </section> : selectedNode ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: selectedService.fallbackColor }} />{selectedService.heading}</div><button className={styles.closeButton} type="button" onClick={() => setSelectedNode(null)} aria-label="Close resource details"><Icon name="close" size={15} /></button></div><h2>{selectedNode.label || getResourceId(selectedNode.id)}</h2>{selectedNodeHidden ? <p className={styles.filteredSelectionNote}>Hidden by the current filter</p> : null}<dl className={styles.detailsList}><div><dt>Resource ID</dt><dd>{getResourceId(selectedNode.id)}</dd></div><div><dt>Resource type</dt><dd>{selectedService.heading}</dd></div>{Object.entries(selectedNode.details || {}).filter(([, value]) => value !== null && value !== undefined && value !== '').map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{formatDetailValue(value)}</dd></div>)}<div><dt>Region</dt><dd>{selectedNode.region || topologyContext?.region || 'unknown'}</dd></div><div><dt>Profile</dt><dd>{topologyContext?.profile || 'unknown'}</dd></div></dl></> : selectedEdge ? <><div className={styles.inspectorHeader}><div className={styles.resourceType}><i style={{ backgroundColor: '#4f83cc' }} />Relationship</div><button className={styles.closeButton} type="button" onClick={() => setSelectedEdge(null)} aria-label="Close relationship details"><Icon name="close" size={15} /></button></div><h2>{selectedEdge.label}</h2>{selectedEdgeHidden ? <p className={styles.filteredSelectionNote}>Hidden by the current filter</p> : null}<dl className={styles.detailsList}><div><dt>From</dt><dd>{selectedEdge.source}</dd></div><div><dt>To</dt><dd>{selectedEdge.target}</dd></div></dl></> : <div className={styles.inspectorEmpty}><span><Icon name="info" size={20} /></span><h2>Topology details</h2><p>Select a node or connection to inspect its full details.</p></div>}
         </aside>
+        </div>
       </div>
-      </>}
       </div>
       {pendingPlanImport ? <div className={styles.dialogBackdrop} role="presentation">
         <section className={styles.importDialog} role="dialog" aria-modal="true" aria-labelledby="import-plan-title">

@@ -5,6 +5,7 @@ import {
   hasPlanningWork,
   loadPlanningDocument,
   planningDocumentFingerprint,
+  planningTopologyFingerprint,
   savePlanningDocument,
   serializePlanningDocument,
   touchPlanningDocument
@@ -72,6 +73,7 @@ export default function usePlanningDocument(serviceCatalog) {
   const [, setHistoryVersion] = useState(0);
   const latestDocumentRef = useRef(planningDocument);
   const lastSavedFingerprintRef = useRef(planningDocumentFingerprint(planningDocument));
+  const lastSavedTopologyFingerprintRef = useRef(planningTopologyFingerprint(planningDocument));
   const dirtyRef = useRef(false);
   const historyRef = useRef(createPlanningHistory(planningDocument));
   const replayedFingerprintRef = useRef(null);
@@ -79,7 +81,7 @@ export default function usePlanningDocument(serviceCatalog) {
 
   latestDocumentRef.current = planningDocument;
 
-  const persistDocument = useCallback((candidate, report = true) => {
+  const persistDocument = useCallback((candidate, report = true, reportErrors = report) => {
     try {
       const saved = savePlanningDocument(storageRef.current, candidate, serviceCatalog);
       let libraryError = null;
@@ -97,16 +99,16 @@ export default function usePlanningDocument(serviceCatalog) {
         lastLibrarySaveSucceededRef.current = false;
       }
       lastSavedFingerprintRef.current = planningDocumentFingerprint(saved);
+      lastSavedTopologyFingerprintRef.current = planningTopologyFingerprint(saved);
       dirtyRef.current = false;
-      if (report) {
+      if (report || reportErrors) {
         setLastSavedAt(saved.updatedAt);
-        setFeedback(libraryError
-          ? { type: 'error', text: `The active architecture was saved, but the library could not be updated: ${libraryError.message}` }
-          : { type: 'success', text: 'Saved locally on this device.' });
+        if (libraryError) setFeedback({ type: 'error', text: `The active architecture was saved, but the library could not be updated: ${libraryError.message}` });
+        else if (report) setFeedback({ type: 'success', text: 'Saved locally on this device.' });
       }
       return saved;
     } catch (error) {
-      if (report) setFeedback({ type: 'error', text: error.message });
+      if (reportErrors) setFeedback({ type: 'error', text: error.message });
       return null;
     }
   }, [serviceCatalog]);
@@ -114,9 +116,13 @@ export default function usePlanningDocument(serviceCatalog) {
   useEffect(() => {
     const fingerprint = planningDocumentFingerprint(planningDocument);
     dirtyRef.current = fingerprint !== lastSavedFingerprintRef.current;
+    const topologyChanged = planningTopologyFingerprint(planningDocument) !== lastSavedTopologyFingerprintRef.current;
+    if (!dirtyRef.current || !topologyChanged) {
+      setFeedback((current) => current?.text === 'Saving changes…' ? null : current);
+    }
     if (!dirtyRef.current) return undefined;
 
-    setFeedback({ type: 'info', text: 'Saving changes…' });
+    if (topologyChanged) setFeedback({ type: 'info', text: 'Saving changes…' });
     const timer = window.setTimeout(() => {
       const fingerprint = planningDocumentFingerprint(planningDocument);
       if (replayedFingerprintRef.current === fingerprint) {
@@ -129,7 +135,7 @@ export default function usePlanningDocument(serviceCatalog) {
         }
         replayedFingerprintRef.current = null;
       }
-      persistDocument(planningDocument);
+      persistDocument(planningDocument, topologyChanged, true);
     }, 350);
     return () => window.clearTimeout(timer);
   }, [persistDocument, planningDocument]);

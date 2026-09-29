@@ -298,6 +298,15 @@ export function planningDocumentFingerprint(document) {
   return JSON.stringify({ ...document, updatedAt: '' });
 }
 
+export function planningTopologyFingerprint(document) {
+  return JSON.stringify({
+    id: document.id,
+    name: document.name,
+    nodes: document.nodes.map(({ x, y, width, height, ...node }) => node),
+    edges: document.edges
+  });
+}
+
 export function hasPlanningWork(document) {
   return Boolean(
     document?.nodes?.length

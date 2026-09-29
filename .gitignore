@@ -4,6 +4,7 @@ out/
 dist/
 release/
 src-tauri/target/
+native/target/
 
 *.log
 npm-debug.log*

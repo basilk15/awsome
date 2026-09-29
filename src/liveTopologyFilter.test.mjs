@@ -35,6 +35,7 @@ test('searches labels, ids, types, and detail names and values case-insensitivel
 test('filters by selected resource types and falls back to the AWS id prefix', () => {
   assert.deepEqual(normaliseLiveTopologyTypes([' EC2 ', 'rDs', '', null]), new Set(['ec2', 'rds']));
   assert.equal(getLiveTopologyNodeType(graph.nodes[3]), 'sg');
+  assert.equal(getLiveTopologyNodeType({ data: { id: 'us-east-1::sg-web' } }), 'sg');
   assert.equal(matchesLiveTopologyNode(graph.nodes[3], { selectedTypes: new Set(['SG']) }), true);
   assert.equal(matchesLiveTopologyNode(graph.nodes[3], { selectedTypes: ['ec2'] }), false);
 });
@@ -58,4 +59,12 @@ test('returns a safe empty graph for malformed input and ignores malformed entri
   }, { query: 'web' });
   assert.deepEqual(filtered.nodes, [graph.nodes[1]]);
   assert.deepEqual(filtered.edges, []);
+});
+
+test('filters a combined topology by region', () => {
+  const combined = { nodes: [
+    { data: { id: 'us-east-1::vpc-1', type: 'vpc', region: 'us-east-1' } },
+    { data: { id: 'eu-west-1::vpc-1', type: 'vpc', region: 'eu-west-1' } }
+  ], edges: [] };
+  assert.deepEqual(filterLiveTopologyGraph(combined, { selectedRegions: ['eu-west-1'] }).nodes.map((node) => node.data.region), ['eu-west-1']);
 });

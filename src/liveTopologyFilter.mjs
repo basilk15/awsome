@@ -48,7 +48,7 @@ export function getLiveTopologyNodeType(node) {
   const explicitType = text(data.type).trim();
   if (explicitType) return explicitType;
 
-  const id = text(data.id).trim();
+  const id = text(data.id).trim().split('::').at(-1);
   const separator = id.indexOf('-');
   return separator > 0 ? id.slice(0, separator) : '';
 }
@@ -73,7 +73,7 @@ export function normaliseLiveTopologyTypes(selectedTypes) {
  * selected resource types. The text query covers label, id, type, and both
  * keys and values in details.
  */
-export function matchesLiveTopologyNode(node, { query = '', selectedTypes } = {}) {
+export function matchesLiveTopologyNode(node, { query = '', selectedTypes, selectedRegions } = {}) {
   const data = dataFor(node);
   const id = text(data.id).trim();
   if (!id) return false;
@@ -82,9 +82,12 @@ export function matchesLiveTopologyNode(node, { query = '', selectedTypes } = {}
   const type = getLiveTopologyNodeType(node);
   if (selected.size && !selected.has(normalise(type))) return false;
 
+  const selectedRegionSet = normaliseLiveTopologyTypes(selectedRegions);
+  if (selectedRegionSet.size && !selectedRegionSet.has(normalise(data.region))) return false;
+
   const queryText = normalise(query);
   if (!queryText) return true;
-  const searchable = [data.label, id, type, detailSearchText(data.details)]
+  const searchable = [data.label, id, type, data.region, detailSearchText(data.details)]
     .map(normalise)
     .join(' ');
   return searchable.includes(queryText);

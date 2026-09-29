@@ -1,6 +1,10 @@
+mod migration;
+mod server;
 mod snapshots;
 mod sources;
 mod topology;
+
+pub use server::serve;
 
 use futures_util::stream::{self, StreamExt};
 use serde::Serialize;
@@ -119,12 +123,11 @@ where
         .await
 }
 
-#[tauri::command]
-async fn fetch_topology(
+pub(crate) async fn fetch_topology(
     profile: String,
     regions: Vec<String>,
     request_id: String,
-    state: tauri::State<'_, ScanState>,
+    state: &ScanState,
 ) -> Result<topology::Graph, String> {
     let regions = validated_regions(regions)?;
     let cancel = Arc::new(Notify::new());
@@ -338,8 +341,7 @@ mod tests {
     }
 }
 
-#[tauri::command]
-fn get_scan_progress(state: tauri::State<'_, ScanState>) -> Option<ScanProgress> {
+pub(crate) fn get_scan_progress(state: &ScanState) -> Option<ScanProgress> {
     state
         .0
         .lock()
@@ -348,8 +350,7 @@ fn get_scan_progress(state: tauri::State<'_, ScanState>) -> Option<ScanProgress>
         .map(|scan| scan.progress.clone())
 }
 
-#[tauri::command]
-fn cancel_scan(request_id: String, state: tauri::State<'_, ScanState>) -> bool {
+pub(crate) fn cancel_scan(request_id: String, state: &ScanState) -> bool {
     if let Ok(mut active) = state.0.lock() {
         if let Some(scan) = active
             .as_mut()
@@ -361,25 +362,4 @@ fn cancel_scan(request_id: String, state: tauri::State<'_, ScanState>) -> bool {
         }
     }
     false
-}
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .manage(ScanState::default())
-        .invoke_handler(tauri::generate_handler![
-            fetch_topology,
-            get_scan_progress,
-            cancel_scan,
-            snapshots::save_snapshot,
-            snapshots::list_snapshots,
-            snapshots::load_snapshot,
-            snapshots::delete_snapshot,
-            snapshots::preview_prune_snapshots,
-            snapshots::prune_snapshots,
-            sources::list_profiles,
-            sources::list_regions,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running awsome");
 }
