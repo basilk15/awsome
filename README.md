@@ -2,161 +2,110 @@
   <img src="./docs/assets/awsome-logo-transparent.png" alt="awsome logo" width="400" />
 </p>
 
-`awsome` is an Electron desktop app for visualizing AWS infrastructure as an interactive topology graph and turning a live snapshot into an editable architecture plan.
+# awsome
 
-It uses a Vite + React frontend and a companion Rust process. Rust reads the selected local AWS profile, fetches live resources with the AWS SDK for Rust, transforms them into graph data, and returns it to the Cytoscape UI through Electron's command bridge.
+awsome is a Linux desktop app for inspecting regional AWS network inventory and sketching architecture plans. Live scans use read-only AWS APIs. Changes made in Planning mode stay on this device and are never applied to AWS.
 
-## What It Shows
+The app uses an Electron shell, a Vite and React interface, and a Rust companion process. The Rust process reads the selected AWS profile, collects inventory, and returns graph data to the interface. Cytoscape renders the live topology.
 
-- VPCs
-- Subnets
-- EC2 instances
-- RDS instances
-- Security groups
-- Internet gateways
-- NAT gateways
-- Route tables and their effective subnet associations/routes
-- VPC gateway and interface endpoints
-- VPC peering connections
-- Egress-only internet gateways
-- Transit Gateways, attachments, route tables, and discovered route paths
-- Application Load Balancers
-- Network Load Balancers
-- Load-balancer listeners, default actions, and custom routing rules (including conditions and weighted forwarding)
-- Load-balancer target groups, health-check configuration, and registered EC2, IP, Lambda, and ALB targets
+## Live topology
 
-awsome also includes a Planning mode for arranging AWS services on a manual architecture canvas without changing live infrastructure.
+Choose an AWS profile and up to 50 regions, then load a topology. At most three regions are scanned at once. Search matches resource names, IDs, types, and returned details. Service-type and region filters narrow the graph without resetting its pan or zoom. Use the mouse wheel to zoom around the pointer, drag empty canvas space to pan, drag a resource toward a canvas edge to reveal more space, and use **Fit** to show the full graph. Short connection captions appear where they fit; hover over or select a connection to read its full label.
 
-## Planning Architectures
+### Inventory coverage
 
-Open **Planning mode** from the top navigation. Planning documents support:
+Live discovery is limited to the regional resources below; it is not a complete inventory of every AWS service.
 
-- In-place renaming from the title above the canvas
-- Automatic local saving of services, connections, sizes, positions, and the current zoom/pan
-- Automatic restoration when Planning mode is opened again
-- A local architecture library for switching between multiple saved designs
-- Undo/redo controls and keyboard shortcuts for recovering autosaved edits
-- Direct removal of services and individual connections
-- Editable labels on each connection, carried into saved JSON and diagram exports
-- Shareable, self-contained SVG diagram exports in addition to the editable JSON export
-- **New architecture**, **Import**, **Export**, and confirmed **Delete** controls
+- **EC2 network inventory:** VPCs, subnets, EC2 instances, security groups, internet gateways, NAT gateways, egress-only internet gateways, gateway and interface VPC endpoints, VPC peering connections, route tables, Transit Gateways, Transit Gateway attachments and route tables, and discovered Transit Gateway routes.
+- **RDS:** DB instances. The app does not query RDS cluster-level inventory.
+- **Elastic Load Balancing v2:** Application and Network Load Balancers, listeners, listener default actions, custom rules and conditions, target groups, health-check settings, and registered instance, IP, Lambda, or ALB targets. Gateway Load Balancers are not included.
 
-Imported files are validated against the AWS service catalog, and an invalid or incompatible file is left unopened with an explanation in the UI. Importing a document whose id already exists asks before replacing that saved architecture. Deleting an architecture also requires confirmation.
+Relationships are derived from the returned configuration inventory; they do not represent observed traffic or test reachability. An edge is emitted only when both endpoint resources are present. A subnet without an explicit route-table association is associated with its VPC's main route table. Route paths through load balancers are shown as load balancer → listener → rule → target group → target; only forward actions create target-group routing edges.
 
-Planning data is stored only on the current device in the app webview's local storage. The library uses a versioned index with one storage entry per architecture and safely imports the older `graphivo.planning.last-document` save without deleting it. JSON files use the versioned `graphivo/planning-document` schema for backward compatibility. Version 1 includes the document id and name, timestamps, nodes (`serviceKey`, custom name, position, size, and optional live-resource provenance), edges, and canvas viewport. If saved local data is corrupt or incompatible, awsome isolates unreadable entries and leaves valid architectures available.
+If an inventory call fails, awsome keeps the resources it did discover and marks the affected inventory as incomplete. Successful regions remain available when another region fails. Comparisons omit scopes that were incomplete in either scan, so missing inventory is not counted as a confirmed deletion. A region whose primary inventory calls all fail is marked failed. If every selected region fails, the scan returns an error instead of an empty graph. After a failed refresh, the last successful graph remains visible with a previous-snapshot warning.
 
-## Stack
+### Saved scans
 
-- Electron
-- Rust
-- Vite
-- React
-- Cytoscape
-- AWS SDK for Rust
+Successful scans are saved on the device. **Saved scans** can reopen a scan without AWS access, compare it with the displayed topology, or delete it after confirmation. Refreshing the same profile and region set compares the result with the most recent saved scan for that source.
 
-## How It Works
+The **Storage** control shows saved-scan disk use and previews the exact files that cleanup would remove. Cleanup keeps the selected number of newest scans per profile and region set, and rechecks the candidate list before deleting. Snapshot files contain resource inventory and metadata; protect the app data directory accordingly.
 
-1. Electron loads the Vite-built React frontend in a desktop window.
-2. The UI offers locally configured AWS profiles and the selected account's enabled regions. You can scan one region or select several additional regions.
-3. Rust loads the selected AWS profile and region from local AWS shared configuration.
-4. The Rust command scans up to three regions concurrently, follows every AWS pagination token, fetches load-balancer listeners, rules, and target registrations with bounded concurrency, and builds nodes and defensible network relationships from the regional inventory.
-5. Cytoscape renders the combined result with region filters and selected-resource details. Each successful scan is saved in the app data directory for later offline viewing and comparison.
+## Planning mode
 
-If an AWS inventory API is unavailable—for example because the selected profile lacks permission—awsome keeps the successfully discovered resources, marks the map as incomplete, and lists the affected inventories in the UI. A multi-region scan keeps successful regions when another region fails. Comparisons exclude inventory scopes that were incomplete in either scan, so missing data is not presented as a confirmed deletion. Internal inventory-task failures still fail the request safely.
-If every primary inventory request fails, the load fails instead of presenting an empty graph as a successful scan. After a failed reload, the previous graph remains visible with its original profile, region, load time, and an explicit previous-snapshot warning.
+Planning mode is a local architecture editor. Add services from the AWS service library, move and resize nodes, draw directed connections, and add connection labels. Changes do not alter live scans or AWS resources. Undo and redo are available for planning edits.
 
-## Live topology to architecture plan
+Planning documents autosave on this device and restore when the app starts. They include node names, positions, sizes, connections and their labels, and canvas zoom and pan. The architecture library supports multiple documents. Import and export use JSON documents with the `graphivo/planning-document` schema, version 1; **Export SVG** creates a self-contained diagram.
 
-1. In **Live mode**, choose an AWS profile and one or more regions and load the topology.
-2. After the load succeeds, select **Open in planning**.
-3. awsome creates a deterministic, editable layout containing the discovered network resources, load balancers, target groups, registered targets, and their directed relationships.
-4. Select an imported node to inspect its original resource label, resource ID, live type, profile, region, and import provenance. Its planning display name, size, and position can be changed without changing the saved live snapshot.
-5. Add services from the planning library or create additional connections to explore the desired “to-be” architecture.
+To make a plan from a scan, load a topology in Live mode and select **Open in planning**. If the planning canvas already contains work, choose to append the scan, replace the canvas, or cancel. Append skips resources and relationships already imported from the same source. Imported nodes retain their source resource, profile, region, and provenance; editing their plan names or positions does not change the saved scan.
 
-If the planning canvas already contains work, awsome asks whether to append the snapshot, replace the canvas, or cancel. Append preserves existing planning work and skips resources and relationships that were already imported, so importing the same snapshot again does not create duplicates.
+Invalid or unsupported JSON imports are rejected with an explanation. Importing a document whose ID already exists asks before replacing it. Deleting a saved architecture requires confirmation.
+
+## AWS profiles and permissions
+
+awsome lists profile names from the shared AWS config and credentials files. By default, it reads `~/.aws/config` and `~/.aws/credentials`; set `AWS_CONFIG_FILE` or `AWS_SHARED_CREDENTIALS_FILE` to use different files. The selected profile is passed to the AWS SDK for Rust. Live scans require credentials and read access for the selected profile. Planning mode and previously saved scans do not require AWS access.
+
+The backend currently calls these AWS API operations:
+
+- **EC2:** `DescribeRegions`, `DescribeVpcs`, `DescribeSubnets`, `DescribeInstances`, `DescribeSecurityGroups`, `DescribeInternetGateways`, `DescribeNatGateways`, `DescribeRouteTables`, `DescribeVpcEndpoints`, `DescribeVpcPeeringConnections`, `DescribeEgressOnlyInternetGateways`, `DescribeTransitGateways`, `DescribeTransitGatewayAttachments`, `DescribeTransitGatewayRouteTables`, and `SearchTransitGatewayRoutes`.
+- **RDS:** `DescribeDBInstances`.
+- **Elastic Load Balancing v2:** `DescribeLoadBalancers`, `DescribeTargetGroups`, `DescribeListeners`, `DescribeRules`, and `DescribeTargetHealth`.
+
+The region picker is populated from regions returned by `DescribeRegions`. If the profile has no configured region, awsome uses `us-east-1` for that lookup. You can type a region code if the lookup is unavailable. Scans call AWS only for inventory; awsome does not create, update, or delete AWS resources.
+
+## Local data
+
+- Planning documents are stored in the Electron webview's local storage, inside the app's user-data directory. The library uses a versioned index and a separate entry for each architecture. The app can import the earlier `graphivo.planning.last-document` save without removing it.
+- Scan snapshots and their summaries are stored as JSON in the app's data directory. On Linux, the default directory is `~/.local/share/com.basil.awsome.electron`, or `$XDG_DATA_HOME/com.basil.awsome.electron` when `XDG_DATA_HOME` is set.
+- On first launch, Electron imports valid scans and planning documents from the previous Tauri installation. It leaves the original data in place, keeps an existing Electron entry when IDs conflict, and reports entries it cannot import.
+
+If planning data is corrupt or incompatible, awsome isolates the unreadable entries and keeps valid architectures available. Export important plans as JSON backups.
 
 ## Development
 
-Install dependencies:
+Build from source with Node.js and npm, plus Rust stable and Cargo. The GitHub Actions workflow currently uses Node.js 22, Rust stable, and Ubuntu 22.04.
 
 ```bash
-npm install
-```
-
-Run the Electron desktop app in development:
-
-```bash
+npm ci
 npm run start
 ```
 
-This builds the Rust companion, starts Vite on port `5173`, and launches Electron against it.
+`npm run start` builds the Rust development companion, starts Vite on port `5173`, and opens the Electron app.
 
-To run the optional read-only AWS inventory smoke test against two regions using the `default` profile:
-
-```bash
-AWSOME_SMOKE_REGIONS=ap-southeast-1,ap-southeast-2 CARGO_TARGET_DIR=src-tauri/target cargo test --manifest-path native/Cargo.toml --locked tests::live_multi_region_inventory_smoke -- --ignored
-```
-
-Set `AWSOME_SMOKE_PROFILE` to use another local profile.
-
-## Production Flow
-
-Create a production desktop bundle:
+To build only the frontend, run `npm run build:web`. To create the production desktop package, run:
 
 ```bash
 npm run build
 ```
 
-To only build the static frontend:
+The production build currently targets a Linux Debian package (`.deb`) and writes it under `release/`. It packages the Vite build and Rust companion; it does not start a development server.
+
+### Checks
 
 ```bash
-npm run build:web
+npm test
+CARGO_TARGET_DIR=src-tauri/target CARGO_BUILD_JOBS=1 cargo test --manifest-path native/Cargo.toml --release --locked
+cargo fmt --manifest-path native/Cargo.toml --all -- --check
 ```
 
-Electron packages the Vite build from `dist/` and the Rust companion in the Debian package; it does not start a local development server in production. The GitHub Actions workflow runs frontend and Rust tests, checks Rust formatting, builds the bundle, launches the installed app in a virtual display, and uploads the `.deb` as a workflow artifact. The native and npm package versions are both `0.2.0`.
+The ignored live inventory smoke test requires read-only AWS access and at least two regions. Example using the `default` profile:
 
-On first launch, Electron imports valid saved scans and planning architectures from the previous Tauri installation. It leaves the original data in place, keeps any existing Electron entry when IDs conflict, and reports entries it cannot import. Electron stores planning data under `com.basil.awsome.electron` in the user's configuration directory and scans under the same name in the user's data directory.
+```bash
+AWSOME_SMOKE_REGIONS=ap-southeast-1,ap-southeast-2 \
+CARGO_TARGET_DIR=src-tauri/target \
+cargo test --manifest-path native/Cargo.toml --locked tests::live_multi_region_inventory_smoke -- --ignored
+```
 
-## AWS Usage
+Set `AWSOME_SMOKE_PROFILE` to use a different local profile. GitHub Actions runs the Node and Rust tests, checks Rust formatting, builds the `.deb`, opens the installed app in a virtual display, and uploads the package as a workflow artifact.
 
-The app expects AWS credentials to be available on the local machine through AWS shared config/credentials files, using a profile name such as `default`.
-
-You can choose:
-
-- AWS profile
-- AWS region
-
-The profile field suggests names from local AWS config and credentials files. The primary region field and **More regions** picker suggest enabled regions returned by AWS; you can still type a region if that lookup is unavailable. The lookup uses the SDK-resolved region when present and falls back to `us-east-1` otherwise. Load the live topology from the app UI. The scan shows each region's progress and status and has a **Cancel scan** button.
-
-Live mode is read-only. It makes regional inventory calls and does not create, update, or delete AWS resources. VPC, subnet, EC2, security-group, RDS, gateway, endpoint, peering, Transit Gateway, route-table, and ELBv2 inventory is fully paginated so large accounts are not silently truncated.
-
-For large inventories, use **Find resource** to search resource names, IDs, types, and returned details. The resource chips above the graph can also narrow the visible topology by service type; the result count makes the active subset clear. Filtering preserves the graph's current pan and zoom. Use **Focus first matching resource** to bring a result into view.
-
-Successful scans are saved automatically. Use **Saved scans** to open one without AWS access, compare it with the displayed topology, or delete it after confirmation. Refreshing the same profile and set of regions also compares the new result with the most recent saved scan for that source. Partial scans identify uncertain changes instead of counting missing inventory as removals, including cross-region relationships whose remote region could not be scanned. Scan summaries are stored separately so the picker does not have to read every full graph; older snapshot files gain summaries when listed. **Storage** shows total disk use and lets you review the exact older scans before removing them while keeping a chosen number per source. Cleanup verifies each saved scan and stops if the candidate list changes after confirmation. Snapshot files contain resource inventory and metadata, so treat the app data directory as account information.
-
-Inside the live topology canvas, use the mouse wheel to zoom around the pointer, drag the background to pan, and drag a resource toward any canvas edge to automatically reveal more workspace in that direction. The fit button restores the complete topology to view.
-Short connection captions appear only where they fit between nodes. Hover over a connection or select it to read the full relationship.
-
-## Project Structure
+## Project layout
 
 ```text
-src/                         Vite + React UI
-src/planningDocument.mjs     Planning schema, validation, migration, and storage
-public/assets/               AWS service assets used by the UI
-native/                      Rust AWS companion and migration code
+src/                         Vite + React interface and planning logic
+native/                      Rust AWS inventory and snapshot backend
 electron/                    Electron main process and preload bridge
-src-tauri/                   Retained legacy Tauri source, excluded from the Electron package
+public/assets/               AWS service assets
+src-tauri/                   Legacy Tauri sources and Rust build target directory
 ```
-
-## Notes
-
-- The AWS inventory backend remains Rust. Electron's Node.js main process manages the desktop window and companion process.
-- Planning changes are local architecture-design edits; awsome does not apply them to AWS.
-- Returning to Live mode restores the loaded topology independently of planning changes.
-- Edges are emitted only when both endpoint resources were discovered. Subnets without an explicit route-table association are connected to the VPC's main route table because that is the effective AWS routing behavior.
-- Route targets are shown only when their endpoint was discovered, so the graph does not emit dangling connections. This includes internet gateways, NAT gateways, EC2 instances, VPC endpoints, peering connections, egress-only internet gateways, and Transit Gateways.
-- ELBv2 discovery currently visualizes Application and Network Load Balancers. Gateway Load Balancers are outside the supported-resource set.
-- Load-balancer paths are shown as load balancer → listener → rule → target group → registered target. Default rule actions are read from listeners; custom rules show priority, conditions, actions, and target-group weights. Only forward actions create target-group routing edges. If listener or rule inventory is unavailable, the UI warns that routing paths may be incomplete.
 
 ## License
 
