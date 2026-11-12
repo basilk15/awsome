@@ -17,7 +17,7 @@ jobs:
       - name: Install desktop smoke-test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xdotool
+          sudo apt-get install -y xvfb
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -25,18 +25,28 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: native -> target
+          cache-on-failure: true
       - run: npm ci
       - run: npm test
-      - run: CARGO_TARGET_DIR=src-tauri/target CARGO_BUILD_JOBS=1 cargo test --manifest-path native/Cargo.toml --release --locked
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - run: CARGO_TARGET_DIR=native/target CARGO_BUILD_JOBS=1 cargo test --manifest-path native/Cargo.toml --release --locked
       - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
       - run: npm run build
       - name: Inspect Debian package
         run: dpkg-deb --info release/*.deb
       - name: Smoke-test installed desktop app
         run: |
-          sudo dpkg -i release/*.deb
-          xvfb-run -a bash .github/scripts/smoke-desktop.sh /usr/bin/awsome
+          sudo apt-get install -y ./release/*.deb
+          xvfb-run -a node .github/scripts/smoke-desktop.cjs /usr/bin/awsome
+      - name: Smoke-test planning with a failed companion
+        run: |
+          smoke_dir="$(mktemp -d)"
+          dpkg-deb -x release/*.deb "$smoke_dir"
+          printf '#!/bin/sh\nexit 1\n' > "$smoke_dir/opt/awsome/resources/bin/awsome-native"
+          chmod +x "$smoke_dir/opt/awsome/resources/bin/awsome-native"
+          AWSOME_TEST_NO_SANDBOX=1 AWSOME_TEST_EXPECT_OFFLINE=1 xvfb-run -a node .github/scripts/smoke-desktop.cjs "$smoke_dir/opt/awsome/awsome"
       - uses: actions/upload-artifact@v4
         with:
           name: awsome-deb

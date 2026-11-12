@@ -3,7 +3,6 @@ node_modules/
 out/
 dist/
 release/
-src-tauri/target/
 native/target/
 
 *.log
