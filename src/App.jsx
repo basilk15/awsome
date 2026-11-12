@@ -1159,6 +1159,7 @@ function PlanningWorkspace({ planning }) {
 
 export default function App() {
   const [showLanding, setShowLanding] = useState(true);
+  const finishLanding = useCallback(() => setShowLanding(false), []);
   const [theme, setTheme] = useState(() => {
     try {
       return window.localStorage.getItem('awsome.theme') === 'dark' ? 'dark' : 'light';
@@ -1575,6 +1576,8 @@ export default function App() {
   useEffect(() => {
     const handleShortcut = (event) => {
       if (mode !== 'live') return;
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest('input, textarea, select, [contenteditable="true"]')) return;
       const direction = getKeyboardZoomDirection(event);
       if (direction > 0 && adjustLiveZoom(1.18)) event.preventDefault();
       if (direction < 0 && adjustLiveZoom(1 / 1.18)) event.preventDefault();
@@ -1865,7 +1868,7 @@ export default function App() {
     setInspectorWidth((current) => Math.max(220, Math.min(maxInspectorWidth(), current + (event.key === 'ArrowLeft' ? 20 : -20))));
   };
 
-  if (showLanding) return <Landing onComplete={() => setShowLanding(false)} />;
+  if (showLanding) return <Landing onComplete={finishLanding} />;
 
   return <main className={styles.appShell} data-theme={theme}>
     <section className={styles.mainView}>

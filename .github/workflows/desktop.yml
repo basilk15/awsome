@@ -28,6 +28,8 @@ jobs:
           workspaces: src-tauri -> target
       - run: npm ci
       - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
       - run: CARGO_TARGET_DIR=src-tauri/target CARGO_BUILD_JOBS=1 cargo test --manifest-path native/Cargo.toml --release --locked
       - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
       - run: npm run build

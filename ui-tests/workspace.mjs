@@ -1,0 +1,79 @@
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { chromium } from 'playwright';
+import { createServer } from 'vite';
+
+let server;
+let browser;
+let baseUrl;
+
+before(async () => {
+  server = await createServer({ server: { host: '127.0.0.1', port: 5180, strictPort: false }, logLevel: 'error' });
+  await server.listen();
+  baseUrl = `http://127.0.0.1:${server.httpServer.address().port}`;
+  browser = await chromium.launch({
+    headless: true,
+    ...(process.env.AWSOME_TEST_CHROMIUM ? { executablePath: process.env.AWSOME_TEST_CHROMIUM } : {})
+  });
+});
+
+after(async () => {
+  await browser?.close();
+  await server?.close();
+});
+
+async function openApp({ delayProfiles = false } = {}) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+  await page.addInitScript(({ delayProfiles }) => {
+    window.awsomeDesktop = {
+      invoke: async (command) => {
+        switch (command) {
+          case 'migration_status': return { warnings: [] };
+          case 'read_legacy_planning': return { warnings: [], entries: [] };
+          case 'list_profiles':
+            if (delayProfiles) return new Promise((resolve) => { window.resolveProfiles = () => resolve(['default']); });
+            return ['default'];
+          case 'list_regions': window.regionLookupComplete = true; return ['us-east-1'];
+          case 'list_snapshots': return [];
+          case 'fetch_topology': return {
+            nodes: [{ data: { id: 'vpc:vpc-0123', label: 'vpc-0123', type: 'vpc', region: 'us-east-1', details: {} } }],
+            edges: [], warnings: []
+          };
+          case 'save_snapshot': return { id: 'test' };
+          default: return null;
+        }
+      }
+    };
+  }, { delayProfiles });
+  await page.goto(baseUrl);
+  return page;
+}
+
+test('opening the workspace survives an asynchronous profile update', async () => {
+  const page = await openApp({ delayProfiles: true });
+  try {
+    await page.waitForFunction(() => typeof window.resolveProfiles === 'function');
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.evaluate(() => window.resolveProfiles());
+    await page.getByLabel('AWS profile').waitFor({ state: 'visible', timeout: 6000 });
+  } finally {
+    await page.close();
+  }
+});
+
+test('typing a resource ID with zero works while a live graph is open', async () => {
+  const page = await openApp();
+  try {
+    await page.waitForFunction(() => window.regionLookupComplete === true);
+    await page.waitForTimeout(100);
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.getByRole('button', { name: 'Load topology', exact: true }).first().click();
+    await page.locator('canvas').first().waitFor({ state: 'visible' });
+    const search = page.getByLabel('Search live topology resources');
+    await search.focus();
+    await page.keyboard.type('vpc-0123');
+    assert.equal(await search.inputValue(), 'vpc-0123');
+  } finally {
+    await page.close();
+  }
+});
