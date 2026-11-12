@@ -26,6 +26,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          cache-on-failure: true
       - run: npm ci
       - run: npm test
       - run: npx playwright install --with-deps chromium
@@ -37,7 +38,7 @@ jobs:
         run: dpkg-deb --info release/*.deb
       - name: Smoke-test installed desktop app
         run: |
-          sudo dpkg -i release/*.deb
+          sudo apt-get install -y ./release/*.deb
           xvfb-run -a bash .github/scripts/smoke-desktop.sh /usr/bin/awsome
       - uses: actions/upload-artifact@v4
         with:
