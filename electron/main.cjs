@@ -28,7 +28,7 @@ const pending = new Map();
 function companionPath() {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'bin', 'awsome-native')
-    : path.join(__dirname, '..', 'src-tauri', 'target', 'debug', 'awsome-native');
+    : path.join(__dirname, '..', 'native', 'target', 'debug', 'awsome-native');
 }
 
 function failPending(error) {
@@ -60,6 +60,12 @@ function startCompanion() {
     }
   });
   child.stderr.on('data', (chunk) => console.error(String(chunk).trim()));
+  child.stdin.on('error', (error) => {
+    if (companion !== child) return;
+    failPending(new Error(`Native companion unavailable: ${error.message}`));
+    if (!child.killed) child.kill();
+    companion = null;
+  });
   child.on('error', (error) => {
     if (companion !== child) return;
     failPending(new Error(`Native companion unavailable: ${error.message}`));
@@ -116,7 +122,7 @@ function registerContentProtocol() {
 function createWindow() {
   window = new BrowserWindow({
     title: 'awsome', width: 1440, height: 960, minWidth: 1100, minHeight: 720,
-    icon: app.isPackaged ? path.join(process.resourcesPath, 'icons', 'icon.png') : path.join(__dirname, '..', 'src-tauri', 'icons', 'icon.png'),
+    icon: app.isPackaged ? path.join(process.resourcesPath, 'icons', 'icon.png') : path.join(__dirname, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

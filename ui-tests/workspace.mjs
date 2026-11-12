@@ -77,3 +77,50 @@ test('typing a resource ID with zero works while a live graph is open', async ()
     await page.close();
   }
 });
+
+test('planning edits are restored after reloading the workspace', async () => {
+  const page = await openApp();
+  try {
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.getByRole('button', { name: 'Planning mode' }).click();
+    await page.getByRole('button', { name: 'Amazon EC2 Compute' }).click();
+    const name = page.getByLabel('Planning node display name');
+    await name.fill('Web server');
+    await page.getByText('Saved locally on this device.', { exact: true }).waitFor();
+
+    await page.reload();
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.getByRole('button', { name: 'Planning mode' }).click();
+    await page.getByRole('button', { name: 'Web server architecture node' }).waitFor();
+    await page.getByText('1 service placed', { exact: true }).waitFor();
+  } finally {
+    await page.close();
+  }
+});
+
+test('a labeled planning connection survives a reload', async () => {
+  const page = await openApp();
+  try {
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.getByRole('button', { name: 'Planning mode' }).click();
+    await page.getByRole('button', { name: 'Amazon EC2 Compute' }).click();
+    await page.getByRole('button', { name: 'Amazon S3 Storage' }).click();
+    await page.getByRole('button', { name: 'Draw', exact: true }).click();
+    await page.getByRole('button', { name: 'Amazon EC2 architecture node' }).press('Enter');
+    await page.getByRole('button', { name: 'Amazon S3 architecture node' }).press('Enter');
+    await page.getByRole('button', { name: 'Select', exact: true }).click();
+    await page.getByRole('button', { name: 'Amazon EC2 architecture node' }).press('Enter');
+    const label = page.getByLabel('Connection label with Amazon S3');
+    await label.fill('HTTPS');
+    await label.blur();
+    await page.waitForFunction(() => localStorage.getItem('graphivo.planning.last-document')?.includes('"label":"HTTPS"'));
+
+    await page.reload();
+    await page.getByRole('button', { name: 'Open workspace' }).click();
+    await page.getByRole('button', { name: 'Planning mode' }).click();
+    await page.getByRole('button', { name: 'Amazon EC2 architecture node' }).press('Enter');
+    assert.equal(await page.getByLabel('Connection label with Amazon S3').inputValue(), 'HTTPS');
+  } finally {
+    await page.close();
+  }
+});

@@ -3,7 +3,8 @@ import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/inter/wght.css';
 import '@fontsource-variable/plus-jakarta-sans/wght.css';
 import './main.css';
-import App, { PLANNING_SERVICES } from './App';
+import App from './App';
+import { PLANNING_SERVICES } from './serviceCatalog';
 import { MIGRATION_MARKER, migrateLegacyPlanning } from './migrateLegacyPlanning.mjs';
 
 async function start() {

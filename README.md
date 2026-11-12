@@ -85,7 +85,7 @@ The production build currently targets a Linux Debian package (`.deb`) and write
 npm test
 npx playwright install chromium
 npm run test:ui
-CARGO_TARGET_DIR=src-tauri/target CARGO_BUILD_JOBS=1 cargo test --manifest-path native/Cargo.toml --release --locked
+CARGO_TARGET_DIR=native/target CARGO_BUILD_JOBS=1 cargo test --manifest-path native/Cargo.toml --release --locked
 cargo fmt --manifest-path native/Cargo.toml --all -- --check
 ```
 
@@ -95,20 +95,19 @@ The ignored live inventory smoke test requires read-only AWS access and at least
 
 ```bash
 AWSOME_SMOKE_REGIONS=ap-southeast-1,ap-southeast-2 \
-CARGO_TARGET_DIR=src-tauri/target \
+CARGO_TARGET_DIR=native/target \
 cargo test --manifest-path native/Cargo.toml --locked tests::live_multi_region_inventory_smoke -- --ignored
 ```
 
-Set `AWSOME_SMOKE_PROFILE` to use a different local profile. GitHub Actions runs the Node, browser, and Rust tests, checks Rust formatting, builds the `.deb`, opens the installed app in a virtual display, and uploads the package as a workflow artifact.
+Set `AWSOME_SMOKE_PROFILE` to use a different local profile. GitHub Actions runs the Node, browser, and Rust tests, checks Rust formatting, builds and installs the `.deb`, checks that the desktop and companion start, verifies planning remains available if the companion fails, and uploads the package as a workflow artifact.
 
 ## Project layout
 
 ```text
 src/                         Vite + React interface and planning logic
 native/                      Rust AWS inventory and snapshot backend
-electron/                    Electron main process and preload bridge
+electron/                    Electron main process, preload bridge, and desktop icon
 public/assets/               AWS service assets
-src-tauri/                   Legacy Tauri sources and Rust build target directory
 ```
 
 ## License
