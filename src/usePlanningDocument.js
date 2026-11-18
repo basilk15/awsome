@@ -148,7 +148,10 @@ export default function usePlanningDocument(serviceCatalog) {
     setPlanningDocument((current) => typeof updater === 'function' ? updater(current) : updater);
   }, []);
 
-  const setNodes = useCallback((updater) => {
+  const setNodes = useCallback((updater, { recordPriorState = false } = {}) => {
+    if (recordPriorState) {
+      historyRef.current = recordPlanningHistory(historyRef.current, latestDocumentRef.current);
+    }
     updateDocument((current) => ({
       ...current,
       nodes: typeof updater === 'function' ? updater(current.nodes) : updater

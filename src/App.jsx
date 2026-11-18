@@ -1,4 +1,4 @@
-import { resourceInventoryCsv } from './resourceInventory.mjs';
+import { inventoryResourceId, resourceInventoryCsv } from './resourceInventory.mjs';
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { compareTopologySnapshots, snapshotChangeCount, snapshotUncertainCount } from './liveSnapshots.mjs';
 import { graphRegions, normaliseScanRegions, sameScanSource } from './liveRegions.mjs';
@@ -647,6 +647,7 @@ function PlanningWorkspace({ planning }) {
     setSelectedId(id);
   }, []);
 
+  const serviceNameInputRef = useRef(null);
   const duplicateSelectedService = () => {
     if (!selectedNode || nodes.length >= MAX_PLANNING_NODES) return;
     const { serviceKey, width, height, x, y, name } = selectedNode;
@@ -662,8 +663,12 @@ function PlanningWorkspace({ planning }) {
       x: offset(x, width),
       y: offset(y, height)
     };
-    setNodes(current => [...current, copy]);
+    setNodes(current => [...current, copy], { recordPriorState: true });
     setSelectedId(copy.id);
+    window.requestAnimationFrame(() => {
+      serviceNameInputRef.current?.focus();
+      serviceNameInputRef.current?.select();
+    });
     setCanvasTool('select');
     setKeyboardConnectionSource(null);
     setConnectionDrag(null);
@@ -1166,7 +1171,7 @@ function PlanningWorkspace({ planning }) {
         {selectedNode && selectedNodeService ? <>
           <span className={styles.panelKicker}>{selectedNode.provenance ? 'Imported AWS resource' : 'AWS service details'}</span>
           <PlanningServiceIcon service={selectedNodeService} />
-          <label className={styles.nodeNameField}><span>Display name</span><input value={selectedNode.name} onChange={(event) => renameSelectedNode(event.target.value)} aria-label="Planning node display name" /></label>
+          <label className={styles.nodeNameField}><span>Display name</span><input ref={serviceNameInputRef} value={selectedNode.name} onChange={(event) => renameSelectedNode(event.target.value)} aria-label="Planning node display name" /></label>
           <p>{selectedServiceDetails?.[0] || 'AWS managed service selected for this architecture.'}</p>
           <div className={styles.realWorldUse}><span>Common use</span><p>{selectedServiceDetails?.[1] || 'Use this service as part of your planned AWS workload.'}</p></div>
           <dl>
@@ -1860,14 +1865,17 @@ export default function App() {
       : [...current, type]);
   };
   const exportVisibleResources = () => {
-    const resources = filteredTopologyGraph.nodes.map(({ data }) => {
-      const type = data.type || getNodeTypeFromId(data.id);
-      const id = data.resourceId || getResourceId(data.id);
+    const resources = filteredTopologyGraph.nodes.map(node => {
+      const data = node.data || node;
+      const region = data.region || (topologyContext?.regions?.length === 1 ? topologyContext.region : '');
+      const localId = region && data.id.startsWith(`${region}::`) ? data.id.slice(region.length + 2) : data.id;
+      const type = data.type || getNodeTypeFromId(localId);
+      const id = inventoryResourceId(data, localId, type);
       return {
         name: data.label || id,
         id,
         type: SERVICE_MAP[type]?.heading || type,
-        region: data.region || (topologyContext?.regions?.length === 1 ? topologyContext.region : ''),
+        region,
         profile: topologyContext?.profile
       };
     });

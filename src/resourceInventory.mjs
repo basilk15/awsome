@@ -1,3 +1,13 @@
+const registrationTypes = new Set(['target_ec2', 'target_ip', 'target_lambda', 'target_alb']);
+
+export function inventoryResourceId(data, localId, type) {
+  if (data.resourceId) return data.resourceId;
+  // The graph keys each registration by target group, target, port and index.
+  if (registrationTypes.has(type) && data.label) return data.label;
+  const prefix = `${type}-`;
+  return localId.startsWith(prefix) ? localId.slice(prefix.length) : localId;
+}
+
 function csvCell(value) {
   let text = String(value ?? '');
   if (/^\s*[=+@-]|^[\t\r\n]/u.test(text)) text = "'" + text;
