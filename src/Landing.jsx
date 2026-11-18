@@ -37,47 +37,33 @@ export default function Landing({ onComplete }) {
 
   return (
     <main className={`${styles.landing} ${leaving ? styles.leaving : ''}`} aria-label="awsome launch screen">
-      <div className={styles.surface} aria-hidden="true">
-        <span className={styles.surfaceGrid} />
-        <span className={styles.surfaceLine} />
-      </div>
-
       <div className={styles.page}>
         <header className={styles.topbar}>
           <span className={styles.topbarBrand}>awsome</span>
-          <span className={styles.topbarDivider} aria-hidden="true" />
           <span className={styles.topbarLabel}>AWS topology explorer</span>
         </header>
 
         <div className={styles.layout}>
           <section className={styles.hero}>
-            <p className={styles.eyebrow}>Cloud architecture workspace</p>
             <h1>See how your cloud connects.</h1>
             <p className={styles.copy}>
-              Explore live AWS resources and relationships in one clear workspace.
+              Explore live AWS resources and sketch your next architecture.
             </p>
             <div className={styles.actions}>
               <button type="button" onClick={enterWorkspace} className={styles.enterButton}>
                 <span>Open workspace</span>
-                <span className={styles.enterArrow} aria-hidden="true">↗</span>
+                <span className={styles.enterArrow} aria-hidden="true" />
               </button>
-              <span className={styles.autoNote}>Opening automatically</span>
             </div>
           </section>
 
           <div className={styles.logoStage} aria-hidden="true">
-            <span className={styles.logoFrame} />
-            <span className={styles.logoAxis} />
-            <div className={styles.logoLockup}>
-              <img className={styles.logo} src={logo} alt="" draggable="false" />
-            </div>
-            <span className={styles.logoBaseline} />
+            <img className={styles.logo} src={logo} alt="" draggable="false" />
           </div>
         </div>
 
         <footer className={styles.footer}>
-          <span>Press Enter to continue</span>
-          <span className={styles.footerLine} aria-hidden="true" />
+          <span>Opening automatically. Press <kbd>Enter</kbd> to continue now.</span>
         </footer>
       </div>
     </main>

@@ -970,11 +970,13 @@ function PlanningWorkspace({ planning }) {
   }, [canvasTool, redo, removeNode, selectedId, undo]);
 
   return <>
+    <div className={styles.workspaceHeading}>
+      <div><h1>Architecture planner</h1><p>Build and connect AWS services on a local canvas.</p></div>
+      <button className={styles.primaryBtn} type="button" onClick={createNewArchitecture}><Icon name="plus" size={16} /> New architecture</button>
+    </div>
     <div className={styles.planningToolbar}>
-      <div><span className={styles.planningEyebrow}>Architecture workspace</span><h1>Design your AWS architecture</h1><p>Drag services onto the canvas, arrange them, then connect the flow.</p></div>
       <div className={styles.planningActions}>
         <div className={`${styles.documentPicker} ${documentMenuOpen ? styles.documentPickerOpen : ''}`} ref={documentPickerRef}>
-          <span className={styles.documentPickerLabel}>Architecture</span>
           <button
             className={styles.documentPickerTrigger}
             type="button"
@@ -1035,25 +1037,27 @@ function PlanningWorkspace({ planning }) {
             </div>
           </div> : null}
         </div>
-        <button className={styles.secondaryBtn} type="button" onClick={createNewArchitecture}><Icon name="plus" size={15} /> New architecture</button>
-        <button className={styles.secondaryBtn} type="button" onClick={() => importInputRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
-        <input ref={importInputRef} className={styles.hiddenFileInput} type="file" accept=".json,.awsome.json,.graphivo.json,application/json" onChange={handleImportFile} tabIndex={-1} />
-        <button className={styles.secondaryBtn} type="button" onClick={exportArchitecture}><Icon name="download" size={15} /> Export</button>
-        <button className={styles.secondaryBtn} type="button" onClick={exportArchitectureSvg}><Icon name="download" size={15} /> Export SVG</button>
-        <button className={styles.secondaryBtn} type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={15} /> Undo</button>
-        <button className={styles.secondaryBtn} type="button" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)"><Icon name="redo" size={15} /> Redo</button>
-        <button className={styles.secondaryBtn} type="button" onClick={() => deleteArchitecture(planningDocument.id)} title="Delete this architecture"><Icon name="trash" size={14} /> Delete</button>
-        <span className={styles.nodeCount}>{nodes.length} service{nodes.length === 1 ? '' : 's'} placed</span>
+        <div className={styles.actionSet} role="group" aria-label="Architecture files">
+          <button className={styles.quietBtn} type="button" onClick={() => importInputRef.current?.click()}><Icon name="upload" size={15} /> Import</button>
+          <input ref={importInputRef} className={styles.hiddenFileInput} type="file" accept=".json,.awsome.json,.graphivo.json,application/json" onChange={handleImportFile} tabIndex={-1} />
+          <button className={styles.quietBtn} type="button" onClick={exportArchitecture}><Icon name="download" size={15} /> Export</button>
+          <button className={styles.quietBtn} type="button" onClick={exportArchitectureSvg}><Icon name="download" size={15} /> Export SVG</button>
+        </div>
+        <div className={styles.actionSet} role="group" aria-label="Edit architecture">
+          <button className={styles.quietBtn} type="button" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"><Icon name="undo" size={15} /> Undo</button>
+          <button className={styles.quietBtn} type="button" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)"><Icon name="redo" size={15} /> Redo</button>
+          <button className={styles.quietBtn} type="button" onClick={() => deleteArchitecture(planningDocument.id)} title="Delete this architecture"><Icon name="trash" size={14} /> Delete</button>
+        </div>
       </div>
     </div>
     {feedback ? <div className={`${styles.planningFeedback} ${styles[`planningFeedback${feedback.type.charAt(0).toUpperCase()}${feedback.type.slice(1)}`]}`} role={feedback.type === 'error' ? 'alert' : 'status'}><Icon name={feedback.type === 'error' ? 'info' : 'layers'} size={14} /><span>{feedback.text}</span></div> : null}
     <div className={styles.planningLayout} style={{ '--palette-width': `${paletteWidth}px` }}>
       <aside ref={paletteRef} className={`${styles.servicePalette} ${removalHover ? styles.servicePaletteRemovalTarget : ''}`} aria-label="AWS service palette">
         {removalHover ? <div className={styles.removalDropHint}>Release to remove from diagram</div> : null}
-        <div className={styles.paletteHeader}><div><span className={styles.panelKicker}>AWS service library</span><h2>Build with AWS</h2></div><span className={styles.libraryCount}>{PLANNING_SERVICES.length}</span></div>
+        <div className={styles.paletteHeader}><h2>Service library</h2><span className={styles.libraryCount} title={`${PLANNING_SERVICES.length} AWS services`}>{PLANNING_SERVICES.length}</span></div>
         <label className={styles.searchBox}><Icon name="search" size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search services" aria-label="Search AWS services" /></label>
         <div className={styles.categoryPicker} ref={categoryPickerRef}><span>Service type</span><button type="button" className={styles.categoryPickerTrigger} aria-expanded={categoryMenuOpen} aria-haspopup="listbox" onClick={() => setCategoryMenuOpen((open) => !open)}><span>{selectedCategory === 'All' ? 'All services' : selectedCategory}</span><Icon name="chevronDown" size={15} /></button>{categoryMenuOpen ? <div className={styles.categoryMenu} role="listbox" aria-label="Filter AWS services by type"><button type="button" role="option" aria-selected={selectedCategory === 'All'} className={selectedCategory === 'All' ? styles.categoryOptionActive : ''} onClick={() => { setSelectedCategory('All'); setCategoryMenuOpen(false); }}><i />All services</button>{categories.slice(1).map((category) => <button type="button" role="option" aria-selected={selectedCategory === category} className={selectedCategory === category ? styles.categoryOptionActive : ''} key={category} onClick={() => { setSelectedCategory(category); setCategoryMenuOpen(false); }}><i />{category}</button>)}</div> : null}</div>
-        <div className={styles.serviceList}>{availableServices.map((service) => <button key={service.key} type="button" className={styles.serviceCard} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/aws-service', service.key); }} onClick={() => placeService(service, { x: 120 + (nodes.length % 3) * 210, y: 120 + (nodes.length % 4) * 110 })}><PlanningServiceIcon service={service} small /><span><strong>{service.name}</strong><small>{service.category}</small></span><Icon name="cursor" size={14} /></button>)}</div>
+        <div className={styles.serviceList}>{availableServices.map((service) => <button key={service.key} type="button" className={styles.serviceCard} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/aws-service', service.key); }} onClick={() => placeService(service, { x: 120 + (nodes.length % 3) * 210, y: 120 + (nodes.length % 4) * 110 })}><PlanningServiceIcon service={service} small /><span><strong>{service.name}</strong><small>{service.category}</small></span><Icon name="plus" size={14} /></button>)}{!availableServices.length ? <p className={styles.serviceListEmpty}>No matching services</p> : null}</div>
         <div
           className={styles.paletteResizeHandle}
           role="separator"
@@ -1072,7 +1076,7 @@ function PlanningWorkspace({ planning }) {
         ><Icon name="resizeHorizontal" size={15} /></div>
       </aside>
       <section className={styles.planningCanvasPanel} aria-label="AWS architecture canvas">
-        <div className={styles.planningCanvasTop}><div className={styles.canvasTitle}><Icon name="layers" size={15} /><input aria-label="Architecture name" title="Rename architecture" maxLength={120} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={commitDocumentName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setNameDraft(planningDocument.name); event.currentTarget.blur(); } }} /><small>{feedback?.text === 'Saving changes…' ? 'Saving' : lastSavedAt ? 'Saved' : 'Draft'}</small></div><div className={styles.canvasMeta}><div className={styles.planningToolSwitch} role="group" aria-label="Canvas tools"><button type="button" aria-pressed={canvasTool === 'select'} className={canvasTool === 'select' ? styles.planningToolActive : ''} onClick={() => { setCanvasTool('select'); setConnectionDrag(null); setKeyboardConnectionSource(null); }} title="Select and move services"><Icon name="cursor" size={15} />Select</button><button type="button" aria-pressed={canvasTool === 'draw'} className={canvasTool === 'draw' ? styles.planningToolActive : ''} onClick={() => { setCanvasTool('draw'); setConnectionDrag(null); setKeyboardConnectionSource(null); }} title="Draw a connection by dragging between services"><Icon name="pen" size={15} />Draw</button></div><span className={styles.zoomHint}>{Math.round(canvasZoom * 100)}% · Scroll to zoom</span></div></div>
+        <div className={styles.planningCanvasTop}><div className={styles.canvasTitle}><Icon name="layers" size={15} /><input aria-label="Architecture name" title="Rename architecture" maxLength={120} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} onBlur={commitDocumentName} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setNameDraft(planningDocument.name); event.currentTarget.blur(); } }} /><small>{feedback?.text === 'Saving changes…' ? 'Saving' : lastSavedAt ? 'Saved' : 'Draft'}</small></div><div className={styles.canvasMeta}><div className={styles.planningToolSwitch} role="group" aria-label="Canvas tools"><button type="button" aria-pressed={canvasTool === 'select'} className={canvasTool === 'select' ? styles.planningToolActive : ''} onClick={() => { setCanvasTool('select'); setConnectionDrag(null); setKeyboardConnectionSource(null); }} title="Select and move services"><Icon name="cursor" size={15} />Select</button><button type="button" aria-pressed={canvasTool === 'draw'} className={canvasTool === 'draw' ? styles.planningToolActive : ''} onClick={() => { setCanvasTool('draw'); setConnectionDrag(null); setKeyboardConnectionSource(null); }} title="Draw a connection by dragging between services"><Icon name="pen" size={15} />Draw</button></div><span className={styles.zoomHint} title="Scroll on the canvas to zoom">{Math.round(canvasZoom * 100)}%</span></div></div>
         <div className={`${styles.planningCanvas} ${isCanvasPanning ? styles.planningCanvasPanning : ''} ${canvasTool === 'draw' ? styles.planningCanvasDrawing : ''}`} ref={canvasRef} onPointerDown={beginCanvasPan} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop} onPointerMove={(event) => { moveCanvasPan(event); moveNode(event); moveConnectionDrag(event); }} onPointerUp={(event) => { endCanvasPan(); endNodeInteraction(event); endConnectionDrag(event); }} onPointerCancel={(event) => { endCanvasPan(true); endNodeInteraction(event, true); endConnectionDrag(event, true); }} onClick={handleCanvasClick}>
           <div className={styles.planningCanvasSurface} style={{ '--canvas-zoom': canvasZoom, '--canvas-pan-x': `${displayPan.x}px`, '--canvas-pan-y': `${displayPan.y}px` }}>
           <div className={styles.canvasGrid} />
@@ -1104,7 +1108,6 @@ function PlanningWorkspace({ planning }) {
             })}
             {previewConnection ? <line className={styles.connectionPreview} {...previewConnection} /> : null}
           </svg> : null}
-          {!nodes.length ? <div className={styles.planningEmpty}><span><Icon name="cursor" size={27} /></span><h2>Start with a service</h2><p>Choose an AWS service from the library and drag it here to start mapping your system.</p></div> : null}
           {displayNodes.map((node) => <div
             key={node.id}
             role="button"
@@ -1131,7 +1134,8 @@ function PlanningWorkspace({ planning }) {
             ><Icon name="resizeDiagonal" size={15} /></span>
           </div>)}
           </div>
-          <div className={`${styles.connectionHelper} ${canvasTool === 'draw' ? styles.connectionHelperDrawing : ''}`} role="status">{canvasTool === 'draw' ? keyboardConnectionSource ? 'Press Enter on another service to connect' : 'Drag between services to connect · Enter works with a keyboard' : 'Drag boxes to arrange them · choose Draw to connect'}</div>
+          {!nodes.length ? <div className={styles.planningEmpty}><span><Icon name="grid" size={24} /></span><h2>Start with a service</h2><p>Click or drag a service from the library to add it to your diagram.</p></div> : null}
+          {nodes.length ? <div className={`${styles.connectionHelper} ${canvasTool === 'draw' ? styles.connectionHelperDrawing : ''}`} role="status">{canvasTool === 'draw' ? keyboardConnectionSource ? 'Press Enter on another service to connect' : 'Drag between services to connect · Enter works with a keyboard' : 'Drag to arrange · Use Draw to connect'}</div> : null}
         </div>
       </section>
       <aside className={styles.planningInspector} aria-label="Architecture details">
@@ -1151,7 +1155,7 @@ function PlanningWorkspace({ planning }) {
             return <div key={edge.id} className={styles.connectionItem}><div><span>{edge.source === selectedNode.id ? 'To' : 'From'} {otherNode?.name || 'service'}</span><button type="button" onClick={() => removeEdge(edge.id)} aria-label={`Remove connection with ${otherNode?.name || 'service'}`} title="Remove connection"><Icon name="close" size={13} /></button></div><PlanningConnectionLabelField edge={edge} otherNodeName={otherNode?.name} onCommit={updateConnectionLabel} /></div>;
           })}</div> : null}
           <button className={styles.dangerBtn} type="button" onClick={() => removeNode(selectedNode.id)}><Icon name="trash" size={14} /> Remove service</button>
-        </> : <div className={styles.plannerInspectorEmpty}><span><Icon name="grid" size={20} /></span><h2>Architecture details</h2><p>Select a service in the canvas to see what it does and how it is commonly used in a real AWS workload.</p></div>}
+        </> : <div className={styles.plannerInspectorEmpty}><span><Icon name="grid" size={20} /></span><h2>Architecture details</h2><p>Select a service to edit its name and connections.</p></div>}
       </aside>
     </div>
   </>;
@@ -1179,7 +1183,7 @@ export default function App() {
   const [selectedSnapshotId, setSelectedSnapshotId] = useState('');
   const [currentSnapshotId, setCurrentSnapshotId] = useState('');
   const [comparison, setComparison] = useState(null);
-  const [status, setStatus] = useState('Ready. Enter profile/region and click Load Topology.');
+  const [status, setStatus] = useState('');
   const [error, setError] = useState(() => window.awsomeMigrationWarning || '');
   const [loading, setLoading] = useState(false);
   const [topologyStats, setTopologyStats] = useState(null);
@@ -1228,7 +1232,7 @@ export default function App() {
   useEffect(() => {
     if (mode !== 'live' || !workspaceRef.current) return;
     const observer = new ResizeObserver(([entry]) => {
-      if (!entry.contentRect.width || window.matchMedia('(max-width: 680px)').matches) return;
+      if (!entry.contentRect.width || window.matchMedia('(max-width: 760px)').matches) return;
       const available = Math.max(220, Math.min(720, entry.contentRect.width - 292));
       setInspectorWidth((current) => Math.min(current, available));
       cyInstanceRef.current?.resize();
@@ -1865,51 +1869,59 @@ export default function App() {
     setInspectorWidth((current) => Math.max(220, Math.min(maxInspectorWidth(), current + (event.key === 'ArrowLeft' ? 20 : -20))));
   };
 
-  if (showLanding) return <Landing onComplete={() => setShowLanding(false)} />;
+  const openWorkspace = useCallback(() => setShowLanding(false), []);
+
+  if (showLanding) return <Landing onComplete={openWorkspace} />;
 
   return <main className={styles.appShell} data-theme={theme}>
     <section className={styles.mainView}>
       <header className={styles.topbar}>
         <div className={styles.brandLockup}><span className={styles.brandMark}><img src={logo} alt="" aria-hidden="true" draggable="false" /></span><div><span className={styles.brandName}>awsome</span><span className={styles.brandCaption}>AWS topology explorer</span></div></div>
-        <nav className={styles.modeSwitch} aria-label="Workspace mode"><button type="button" className={mode === 'live' ? styles.modeActive : ''} onClick={() => switchMode('live')}><i />Live mode</button><button type="button" className={mode === 'planning' ? styles.modeActive : ''} onClick={() => switchMode('planning')}><Icon name="grid" size={14} />Planning mode</button></nav>
-        <div className={styles.topbarMeta}><button type="button" className={styles.themeToggle} aria-pressed={theme === 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={17} /><span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span></button><span className={`${styles.connectionState} ${canFetchTopology ? styles.connectionReady : styles.connectionOffline}`}><i /> {canFetchTopology ? 'Native backend ready' : 'Electron companion unavailable'}</span></div>
+        <nav className={styles.modeSwitch} aria-label="Workspace mode"><button type="button" className={mode === 'live' ? styles.modeActive : ''} aria-pressed={mode === 'live'} onClick={() => switchMode('live')}><Icon name="network" size={15} />Live mode</button><button type="button" className={mode === 'planning' ? styles.modeActive : ''} aria-pressed={mode === 'planning'} onClick={() => switchMode('planning')}><Icon name="grid" size={14} />Planning mode</button></nav>
+        <div className={styles.topbarMeta}><button type="button" className={styles.themeToggle} aria-pressed={theme === 'dark'} aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'} onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={17} /></button><span className={`${styles.connectionState} ${canFetchTopology ? styles.connectionReady : styles.connectionOffline}`}><i /> {canFetchTopology ? 'Backend ready' : 'Backend unavailable'}</span></div>
       </header>
       {mode === 'planning' ? <div className={styles.modeStage}><PlanningWorkspace planning={planning} /></div> : null}
       <div className={styles.modeStage} hidden={mode !== 'live'}>
-      <div className={styles.toolbarCard}>
-        <div className={styles.sourceLabel}><Icon name="database" size={15} /><span>Data source</span></div>
-        <div className={styles.fieldGroup}><label htmlFor="aws-profile">AWS profile</label><input id="aws-profile" list="aws-profile-options" value={profile} onChange={(event) => { setProfile(event.target.value); setAdditionalRegions([]); }} disabled={loading} autoComplete="off" /><datalist id="aws-profile-options">{availableProfiles.map((name) => <option key={name} value={name} />)}</datalist></div>
-        <div className={styles.fieldGroup}><label htmlFor="aws-region">Primary region</label><input id="aws-region" list="aws-region-options" value={region} onChange={(event) => { const next = event.target.value; setRegion(next); setAdditionalRegions((current) => current.filter((name) => name !== next.trim().toLowerCase())); }} disabled={loading} autoComplete="off" /><datalist id="aws-region-options">{availableRegions.map((name) => <option key={name} value={name} />)}</datalist></div>
-        <div className={styles.regionPicker}><details ref={regionPickerRef}><summary>More regions{additionalRegions.length ? ` (${additionalRegions.length})` : ''}</summary><div className={styles.regionOptions}><strong>Scan additional regions</strong><p>Select enabled regions or enter another region code.</p><div className={styles.regionOptionList}>{availableRegions.filter((name) => name !== region.trim()).map((name) => <label key={name}><input type="checkbox" checked={additionalRegions.includes(name)} disabled={loading} onChange={() => toggleAdditionalRegion(name)} />{name}</label>)}</div><div className={styles.regionCustomInput}><input value={customRegion} onChange={(event) => setCustomRegion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCustomRegion(); } }} disabled={loading} placeholder="Region code" aria-label="Additional region code" /><button type="button" disabled={loading || !customRegion.trim()} onClick={addCustomRegion}>Add</button></div>{additionalRegions.length ? <div className={styles.regionSelections}>{additionalRegions.map((name) => <button key={name} type="button" disabled={loading} onClick={() => toggleAdditionalRegion(name)} aria-label={`Remove ${name} from scan`}>{name} ×</button>)}</div> : null}</div></details></div>
-        <label className={styles.liveSearchBox}><Icon name="search" size={15} /><span>Find resource</span><input value={liveSearch} onChange={(event) => setLiveSearch(event.target.value)} disabled={loading || !topologyGraph} placeholder="Name, ID, detail…" aria-label="Search live topology resources" /></label>
-        <div className={styles.actionsGroup}>
-          <button className={styles.secondaryBtn} disabled={loading || !topologyGraph} onClick={openTopologyInPlanning}><Icon name="grid" size={15} /> Open in planning</button>
-          <button className={styles.secondaryBtn} disabled={loading || !topologyStats} onClick={() => fetchTopology(true)}><Icon name="refresh" size={15} /> Refresh</button>
-          {loading ? <button className={styles.secondaryBtn} type="button" onClick={cancelTopologyScan}><Icon name="close" size={15} /> Cancel scan</button> : null}
-          <button className={styles.primaryBtn} disabled={loading} onClick={() => fetchTopology(false)}>{loading ? <><span className={styles.buttonSpinner} /> Scanning</> : <><Icon name="network" size={15} /> Load topology</>}</button>
-        </div>
+      <div className={styles.workspaceHeading}>
+        <div><h1>Live topology</h1><p>Explore resources and relationships across AWS regions.</p></div>
+        <button className={styles.secondaryBtn} type="button" disabled={loading || !topologyGraph} onClick={openTopologyInPlanning}><Icon name="grid" size={15} /> Open in planning</button>
       </div>
-      <div className={styles.snapshotBar}>
-        <div className={styles.snapshotSourceHint}>{scanRegions.length} selected region{scanRegions.length === 1 ? '' : 's'}{sourceHint ? ` · ${sourceHint}` : ''}</div>
-        <label htmlFor="saved-snapshot">Saved scans</label>
-        <select id="saved-snapshot" value={selectedSnapshotId} onChange={(event) => setSelectedSnapshotId(event.target.value)} disabled={loading || !snapshots.length}>
-          {!snapshots.length ? <option value="">No saved scans</option> : snapshots.map((item) => <option key={item.id} value={item.id}>{item.profile} / {item.region} · {new Date(Number(item.capturedAt)).toLocaleString()} · {item.nodes} resources</option>)}
-        </select>
-        <button className={styles.secondaryBtn} type="button" disabled={loading || !selectedSnapshotId} onClick={openSavedSnapshot}>Open offline</button>
-        <button className={styles.secondaryBtn} type="button" disabled={loading || !selectedSnapshotId || !topologyGraph} onClick={compareSavedSnapshot}>Compare</button>
-        <button className={styles.secondaryBtn} type="button" disabled={loading || !selectedSnapshotId} onClick={deleteSavedSnapshot} aria-label="Delete selected saved scan"><Icon name="trash" size={15} /></button>
-        <details className={styles.retentionMenu}><summary>Storage</summary><div><strong>{snapshots.length} saved scans · {(snapshots.reduce((sum, item) => sum + (item.bytes || 0), 0) / 1024 / 1024).toFixed(1)} MB</strong><label>Keep newest per source<select value={retentionCount} onChange={(event) => setRetentionCount(Number(event.target.value))}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option></select></label><button className={styles.secondaryBtn} type="button" disabled={loading || cleanupPending || !snapshots.length} onClick={pruneSavedSnapshots}>{cleanupPending ? 'Checking saved scans…' : 'Review cleanup'}</button></div></details>
+      <div className={styles.sourcePanel}>
+        <div className={styles.toolbarCard} role="group" aria-label="Scan source">
+          <div className={styles.fieldGroup}><label htmlFor="aws-profile">AWS profile</label><input id="aws-profile" list="aws-profile-options" value={profile} onChange={(event) => { setProfile(event.target.value); setAdditionalRegions([]); }} disabled={loading} autoComplete="off" /><datalist id="aws-profile-options">{availableProfiles.map((name) => <option key={name} value={name} />)}</datalist></div>
+          <div className={styles.fieldGroup}><label htmlFor="aws-region">Primary region</label><input id="aws-region" list="aws-region-options" value={region} onChange={(event) => { const next = event.target.value; setRegion(next); setAdditionalRegions((current) => current.filter((name) => name !== next.trim().toLowerCase())); }} disabled={loading} autoComplete="off" /><datalist id="aws-region-options">{availableRegions.map((name) => <option key={name} value={name} />)}</datalist></div>
+          <div className={styles.regionPicker}><details ref={regionPickerRef}><summary>More regions{additionalRegions.length ? ` (${additionalRegions.length})` : ''}</summary><div className={styles.regionOptions}><strong>Scan additional regions</strong><p>Select enabled regions or enter another region code.</p><div className={styles.regionOptionList}>{availableRegions.filter((name) => name !== region.trim()).map((name) => <label key={name}><input type="checkbox" checked={additionalRegions.includes(name)} disabled={loading} onChange={() => toggleAdditionalRegion(name)} />{name}</label>)}</div><div className={styles.regionCustomInput}><input value={customRegion} onChange={(event) => setCustomRegion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addCustomRegion(); } }} disabled={loading} placeholder="Region code" aria-label="Additional region code" /><button type="button" disabled={loading || !customRegion.trim()} onClick={addCustomRegion}>Add</button></div>{additionalRegions.length ? <div className={styles.regionSelections}>{additionalRegions.map((name) => <button key={name} type="button" disabled={loading} onClick={() => toggleAdditionalRegion(name)} aria-label={`Remove ${name} from scan`}>{name} ×</button>)}</div> : null}</div></details></div>
+          <div className={styles.snapshotSourceHint}>{scanRegions.length} selected region{scanRegions.length === 1 ? '' : 's'}{sourceHint ? ` · ${sourceHint}` : ''}</div>
+          <div className={styles.actionsGroup}>
+            <button className={styles.secondaryBtn} disabled={loading || !topologyStats} onClick={() => fetchTopology(true)}><Icon name="refresh" size={15} /> Refresh</button>
+            {loading ? <button className={styles.secondaryBtn} type="button" onClick={cancelTopologyScan}><Icon name="close" size={15} /> Cancel scan</button> : null}
+            <button className={styles.primaryBtn} disabled={loading} onClick={() => fetchTopology(false)}>{loading ? <><span className={styles.buttonSpinner} /> Scanning</> : <><Icon name="network" size={15} /> Load topology</>}</button>
+          </div>
+        </div>
+        <div className={styles.snapshotBar} role="group" aria-label="Saved scans">
+          <label htmlFor="saved-snapshot">Saved scans</label>
+          <select id="saved-snapshot" value={selectedSnapshotId} onChange={(event) => setSelectedSnapshotId(event.target.value)} disabled={loading || !snapshots.length}>
+            {!snapshots.length ? <option value="">No saved scans</option> : snapshots.map((item) => <option key={item.id} value={item.id}>{item.profile} / {item.region} · {new Date(Number(item.capturedAt)).toLocaleString()} · {item.nodes} resources</option>)}
+          </select>
+          <button className={styles.secondaryBtn} type="button" disabled={loading || !selectedSnapshotId} onClick={openSavedSnapshot}>Open offline</button>
+          <button className={styles.secondaryBtn} type="button" disabled={loading || !selectedSnapshotId || !topologyGraph} onClick={compareSavedSnapshot}>Compare</button>
+          <button className={styles.secondaryBtn} type="button" disabled={loading || !selectedSnapshotId} onClick={deleteSavedSnapshot} aria-label="Delete selected saved scan"><Icon name="trash" size={15} /></button>
+          <details className={styles.retentionMenu}><summary>Storage</summary><div><strong>{snapshots.length} saved scans · {(snapshots.reduce((sum, item) => sum + (item.bytes || 0), 0) / 1024 / 1024).toFixed(1)} MB</strong><label>Keep newest per source<select value={retentionCount} onChange={(event) => setRetentionCount(Number(event.target.value))}><option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option></select></label><button className={styles.secondaryBtn} type="button" disabled={loading || cleanupPending || !snapshots.length} onClick={pruneSavedSnapshots}>{cleanupPending ? 'Checking saved scans…' : 'Review cleanup'}</button></div></details>
+        </div>
       </div>
       {error ? <div className={styles.errorBanner} role="alert"><Icon name="info" size={17} /><div><strong>Could not complete action</strong><p>{error.replace('Failed to load topology: ', '')}</p></div></div> : null}
       {snapshotStale && !loading && topologyContext ? <div className={styles.warningBanner} role="status"><Icon name="info" size={17} /><div><strong>Showing a previous snapshot</strong><p>The latest load failed. This graph still shows {topologyContext.profile} in {topologyContext.region} from {new Date(topologyContext.loadedAt).toLocaleString()}.</p></div></div> : null}
       {topologyWarnings.length ? <section className={styles.warningBanner} role="status" aria-live="polite" aria-label="Incomplete AWS inventory warnings"><Icon name="info" size={17} /><div><strong>{snapshotStale ? 'Previous snapshot had incomplete inventory' : 'Topology loaded with incomplete inventory'}</strong><p>Some AWS resources could not be read. The displayed topology includes all successfully discovered resources.</p><ul>{topologyWarnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></section> : null}
       {topologyRegions.length > 1 ? <div className={styles.regionFilterBar} role="group" aria-label="Filter topology by region"><span>Regions</span><button type="button" className={!selectedLiveRegions.length ? styles.regionFilterActive : ''} onClick={() => setSelectedLiveRegions([])}>All</button>{topologyRegions.map((name) => <button key={name} type="button" className={selectedLiveRegions.length === 1 && selectedLiveRegions[0] === name ? styles.regionFilterActive : ''} onClick={() => setSelectedLiveRegions([name])}>{name} · {topologyGraph.nodes.filter((node) => node.data.region === name).length}</button>)}</div> : null}
-      <div className={styles.workspaceMeta}><div><strong>{snapshotStale && !loading ? 'Previous snapshot' : 'Topology'}</strong><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connection${topologyStats.edges === 1 ? '' : 's'}` : 'No topology loaded'}{topologyContext ? ` · ${topologyContext.profile} / ${topologyContext.region} · ${currentSnapshotId ? 'saved' : 'loaded'} ${new Date(topologyContext.loadedAt).toLocaleString()}` : ''}</span></div><div className={styles.status} role="status"><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</div></div>
+      <div className={styles.workspaceMeta}><div><h2>{snapshotStale && !loading ? 'Previous snapshot' : 'Topology canvas'}</h2><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connection${topologyStats.edges === 1 ? '' : 's'}` : ''}{topologyContext ? ` · ${topologyContext.profile} / ${topologyContext.region} · ${currentSnapshotId ? 'saved' : 'loaded'} ${new Date(topologyContext.loadedAt).toLocaleString()}` : ''}</span></div><label className={styles.liveSearchBox}><Icon name="search" size={15} /><input value={liveSearch} onChange={(event) => setLiveSearch(event.target.value)} disabled={loading || !topologyGraph} placeholder="Find a resource…" aria-label="Search live topology resources" /></label></div>
+      <div className={styles.status} role="status">
+        {status ? <><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</> : null}
+      </div>
       <div ref={workspaceRef} className={styles.workspace} style={{ '--inspector-width': `${inspectorWidth}px` }}>
         <section className={styles.graphPanel} aria-label="AWS topology graph">
-          <div className={styles.canvasTools}><div className={styles.legend} aria-label="Filter topology by resource type">{activeLegendItems.map((type) => <button key={type} type="button" className={selectedLiveTypes.length && !selectedLiveTypes.includes(type) ? styles.legendFilterInactive : ''} aria-pressed={!selectedLiveTypes.length || selectedLiveTypes.includes(type)} onClick={() => toggleLiveResourceType(type)} title={`Show only ${SERVICE_MAP[type].heading} resources`}><i style={{ backgroundColor: SERVICE_MAP[type].fallbackColor }} />{SERVICE_MAP[type].heading}</button>)}</div><div className={styles.canvasToolActions}><button className={styles.iconButton} type="button" onClick={focusFirstResult} disabled={!filteredTopologyGraph.nodes.length} aria-label="Focus first matching resource" title="Focus first matching resource"><Icon name="cursor" size={16} /></button><button className={styles.iconButton} type="button" onClick={applyZoomedFit} aria-label="Fit topology to view" title="Fit topology to view"><Icon name="fit" size={16} /></button></div></div>
-          {!topologyStats && !loading ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="cloud" size={26} /></span><h1>Map your AWS infrastructure</h1><p>Choose a local AWS profile and region, then load the live resource relationships.</p><button className={styles.primaryBtn} type="button" onClick={() => fetchTopology(false)}><Icon name="network" size={15} /> Load topology</button></div> : null}
-          {topologyStats && !loading && !filteredTopologyGraph.nodes.length ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="search" size={26} /></span><h1>{hasLiveFilters ? 'No matching resources' : 'No resources found'}</h1><p>{hasLiveFilters ? 'Adjust the search or resource-type filters to see more of this topology.' : 'The selected regions have no discovered resources in the supported inventory.'}</p>{hasLiveFilters ? <button className={styles.secondaryBtn} type="button" onClick={clearLiveFilters}>Clear filters</button> : null}</div> : null}
+          <div className={styles.canvasTools} hidden={!topologyGraph}><div className={styles.legend} role="group" aria-label="Filter topology by resource type" hidden={!activeLegendItems.length}>{activeLegendItems.map((type) => <button key={type} type="button" className={selectedLiveTypes.length && !selectedLiveTypes.includes(type) ? styles.legendFilterInactive : ''} aria-pressed={!selectedLiveTypes.length || selectedLiveTypes.includes(type)} onClick={() => toggleLiveResourceType(type)} title={`Show only ${SERVICE_MAP[type].heading} resources`}><i style={{ backgroundColor: SERVICE_MAP[type].fallbackColor }} />{SERVICE_MAP[type].heading}</button>)}</div><div className={styles.canvasToolActions}><button className={styles.iconButton} type="button" onClick={focusFirstResult} disabled={!filteredTopologyGraph.nodes.length} aria-label="Focus first matching resource" title="Focus first matching resource"><Icon name="cursor" size={16} /></button><button className={styles.iconButton} type="button" onClick={applyZoomedFit} disabled={!filteredTopologyGraph.nodes.length} aria-label="Fit topology to view" title="Fit topology to view"><Icon name="fit" size={16} /></button></div></div>
+          {!topologyStats && !loading ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="cloud" size={26} /></span><h2>No topology loaded</h2><p>Load a topology from AWS or open a saved scan to explore its resources.</p></div> : null}
+          {topologyStats && !loading && !filteredTopologyGraph.nodes.length ? <div className={styles.emptyState}><span className={styles.emptyIcon}><Icon name="search" size={26} /></span><h2>{hasLiveFilters ? 'No matching resources' : 'No resources found'}</h2><p>{hasLiveFilters ? 'Adjust the search or resource-type filters to see more of this topology.' : 'The selected regions have no discovered resources in the supported inventory.'}</p>{hasLiveFilters ? <button className={styles.secondaryBtn} type="button" onClick={clearLiveFilters}>Clear filters</button> : null}</div> : null}
           {loading ? <div className={styles.loadingOverlay} role="status" aria-live="polite"><div className={styles.scanProgressHeading}><span className={styles.loadingPulse} />{scanProgress?.regions?.length ? `${scanProgress.regions.filter((item) => item.status === 'succeeded' || item.status === 'failed').length} of ${scanProgress.regions.length} regions finished` : 'Connecting to AWS…'}</div>{scanProgress?.regions?.length ? <ul className={styles.scanRegionList}>{scanProgress.regions.map((item) => <li key={item.region}><strong>{item.region}</strong><span className={item.status === 'failed' ? styles.scanRegionFailed : ''}>{item.status === 'queued' ? 'Waiting' : item.status === 'succeeded' ? 'Complete' : item.status === 'failed' ? 'Failed' : `${item.completed} of ${item.total} · ${item.stage}`}</span></li>)}</ul> : null}</div> : null}
           <div
             ref={cyContainerRef}
