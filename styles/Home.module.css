@@ -365,6 +365,8 @@
 .connectionLabelField input:focus { border-color: #70a1df; box-shadow: 0 0 0 2px rgba(59,130,246,.12); }
 .connectionList button { display: grid; width: 23px; height: 23px; flex: 0 0 auto; place-items: center; padding: 0; color: #8b4b55; border: 1px solid #efd3d7; border-radius: 5px; background: #fff; cursor: pointer; }
 .connectionList button:hover { color: #b42336; border-color: #e7aab3; background: #fff7f8; }
+.duplicateBtn { composes: secondaryBtn; width: 100%; margin-top: 14px; }
+.duplicateBtn + .dangerBtn { margin-top: 6px; }
 .dangerBtn { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 40px; gap: 6px; margin-top: 14px; color: #a12e3d; border: 1px solid #ebc3c9; border-radius: 7px; background: #fff8f9; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; }
 .dangerBtn:hover { color: #861f2d; border-color: #dc98a3; background: #fff1f3; }
 .dangerBtn:focus-visible, .connectionList button:focus-visible { outline: 2px solid #dc566b; outline-offset: 2px; }

@@ -70,6 +70,7 @@ import {
 import {
   DEFAULT_PLANNING_ZOOM,
   MAX_PLANNING_ZOOM,
+  MAX_PLANNING_NODES,
   MIN_PLANNING_ZOOM
 } from './planningDocument.mjs';
 import usePlanningDocument from './usePlanningDocument';
@@ -646,6 +647,28 @@ function PlanningWorkspace({ planning }) {
     setSelectedId(id);
   }, []);
 
+  const duplicateSelectedService = () => {
+    if (!selectedNode || nodes.length >= MAX_PLANNING_NODES) return;
+    const { serviceKey, width, height, x, y, name } = selectedNode;
+    const offset = (position, size) => position + size + 28 <= PLANNING_CANVAS_SIZE
+      ? position + 28
+      : Math.max(0, position - 28);
+    const copy = {
+      id: `${serviceKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: `${(name.trim() || selectedNodeService.name).slice(0, 153)} (copy)`,
+      serviceKey,
+      width,
+      height,
+      x: offset(x, width),
+      y: offset(y, height)
+    };
+    setNodes(current => [...current, copy]);
+    setSelectedId(copy.id);
+    setCanvasTool('select');
+    setKeyboardConnectionSource(null);
+    setConnectionDrag(null);
+  };
+
   const handleDrop = (event) => {
     event.preventDefault();
     const key = event.dataTransfer.getData('application/aws-service');
@@ -1155,6 +1178,11 @@ function PlanningWorkspace({ planning }) {
             const otherNode = nodes.find((node) => node.id === (edge.source === selectedNode.id ? edge.target : edge.source));
             return <div key={edge.id} className={styles.connectionItem}><div><span>{edge.source === selectedNode.id ? 'To' : 'From'} {otherNode?.name || 'service'}</span><button type="button" onClick={() => removeEdge(edge.id)} aria-label={`Remove connection with ${otherNode?.name || 'service'}`} title="Remove connection"><Icon name="close" size={13} /></button></div><PlanningConnectionLabelField edge={edge} otherNodeName={otherNode?.name} onCommit={updateConnectionLabel} /></div>;
           })}</div> : null}
+          <button className={styles.duplicateBtn} type="button" onClick={duplicateSelectedService}
+            disabled={nodes.length >= MAX_PLANNING_NODES}
+            title={nodes.length >= MAX_PLANNING_NODES ? 'Architecture service limit reached' : 'Create an unconnected copy on the canvas'}>
+            <Icon name="layers" size={15} /> Duplicate service
+          </button>
           <button className={styles.dangerBtn} type="button" onClick={() => removeNode(selectedNode.id)}><Icon name="trash" size={14} /> Remove service</button>
         </> : <div className={styles.plannerInspectorEmpty}><span><Icon name="grid" size={20} /></span><h2>Architecture details</h2><p>Select a service to edit its name and connections.</p></div>}
       </aside>

@@ -10,7 +10,7 @@ const DEFAULT_VIEWPORT = Object.freeze({ zoom: DEFAULT_PLANNING_ZOOM, pan: Objec
 const CANVAS_SIZE = 3000;
 const MIN_NODE_WIDTH = 126;
 const MIN_NODE_HEIGHT = 68;
-const MAX_NODES = 2000;
+export const MAX_PLANNING_NODES = 2000;
 const MAX_EDGES = 5000;
 
 export class PlanningDocumentError extends Error {
@@ -133,8 +133,8 @@ export function normalizePlanningDocument(input, serviceCatalog, options = {}) {
   if (!Array.isArray(migrated.nodes)) {
     throw new PlanningDocumentError('"nodes" must be an array.');
   }
-  if (migrated.nodes.length > MAX_NODES) {
-    throw new PlanningDocumentError(`"nodes" cannot contain more than ${MAX_NODES} items.`);
+  if (migrated.nodes.length > MAX_PLANNING_NODES) {
+    throw new PlanningDocumentError(`"nodes" cannot contain more than ${MAX_PLANNING_NODES} items.`);
   }
   if (!Array.isArray(migrated.edges)) {
     throw new PlanningDocumentError('"edges" must be an array.');
