@@ -1,3 +1,4 @@
+import { resourceInventoryCsv } from './resourceInventory.mjs';
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { compareTopologySnapshots, snapshotChangeCount, snapshotUncertainCount } from './liveSnapshots.mjs';
 import { graphRegions, normaliseScanRegions, sameScanSource } from './liveRegions.mjs';
@@ -1830,6 +1831,27 @@ export default function App() {
       ? current.filter((selected) => selected !== type)
       : [...current, type]);
   };
+  const exportVisibleResources = () => {
+    const resources = filteredTopologyGraph.nodes.map(({ data }) => {
+      const type = data.type || getNodeTypeFromId(data.id);
+      const id = data.resourceId || getResourceId(data.id);
+      return {
+        name: data.label || id,
+        id,
+        type: SERVICE_MAP[type]?.heading || type,
+        region: data.region || (topologyContext?.regions?.length === 1 ? topologyContext.region : ''),
+        profile: topologyContext?.profile
+      };
+    });
+    const blob = new Blob(['\uFEFF', resourceInventoryCsv(resources)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'awsome-resource-inventory.csv';
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
+
   const clearLiveFilters = () => {
     setLiveSearch('');
     setSelectedLiveTypes([]);
@@ -1913,7 +1935,12 @@ export default function App() {
       {snapshotStale && !loading && topologyContext ? <div className={styles.warningBanner} role="status"><Icon name="info" size={17} /><div><strong>Showing a previous snapshot</strong><p>The latest load failed. This graph still shows {topologyContext.profile} in {topologyContext.region} from {new Date(topologyContext.loadedAt).toLocaleString()}.</p></div></div> : null}
       {topologyWarnings.length ? <section className={styles.warningBanner} role="status" aria-live="polite" aria-label="Incomplete AWS inventory warnings"><Icon name="info" size={17} /><div><strong>{snapshotStale ? 'Previous snapshot had incomplete inventory' : 'Topology loaded with incomplete inventory'}</strong><p>Some AWS resources could not be read. The displayed topology includes all successfully discovered resources.</p><ul>{topologyWarnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></section> : null}
       {topologyRegions.length > 1 ? <div className={styles.regionFilterBar} role="group" aria-label="Filter topology by region"><span>Regions</span><button type="button" className={!selectedLiveRegions.length ? styles.regionFilterActive : ''} onClick={() => setSelectedLiveRegions([])}>All</button>{topologyRegions.map((name) => <button key={name} type="button" className={selectedLiveRegions.length === 1 && selectedLiveRegions[0] === name ? styles.regionFilterActive : ''} onClick={() => setSelectedLiveRegions([name])}>{name} · {topologyGraph.nodes.filter((node) => node.data.region === name).length}</button>)}</div> : null}
-      <div className={styles.workspaceMeta}><div><h2>{snapshotStale && !loading ? 'Previous snapshot' : 'Topology canvas'}</h2><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connection${topologyStats.edges === 1 ? '' : 's'}` : ''}{topologyContext ? ` · ${topologyContext.profile} / ${topologyContext.region} · ${currentSnapshotId ? 'saved' : 'loaded'} ${new Date(topologyContext.loadedAt).toLocaleString()}` : ''}</span></div><label className={styles.liveSearchBox}><Icon name="search" size={15} /><input value={liveSearch} onChange={(event) => setLiveSearch(event.target.value)} disabled={loading || !topologyGraph} placeholder="Find a resource…" aria-label="Search live topology resources" /></label></div>
+      <div className={styles.workspaceMeta}><div><h2>{snapshotStale && !loading ? 'Previous snapshot' : 'Topology canvas'}</h2><span>{topologyStats ? hasLiveFilters ? `${visibleTopologyStats.nodes} of ${topologyStats.nodes} resources · ${visibleTopologyStats.edges} of ${topologyStats.edges} connections shown` : `${topologyStats.nodes} resources · ${topologyStats.edges} connection${topologyStats.edges === 1 ? '' : 's'}` : ''}{topologyContext ? ` · ${topologyContext.profile} / ${topologyContext.region} · ${currentSnapshotId ? 'saved' : 'loaded'} ${new Date(topologyContext.loadedAt).toLocaleString()}` : ''}</span></div><label className={styles.liveSearchBox}><Icon name="search" size={15} /><input value={liveSearch} onChange={(event) => setLiveSearch(event.target.value)} disabled={loading || !topologyGraph} placeholder="Find a resource…" aria-label="Search live topology resources" /></label>
+        {topologyGraph ? <button className={styles.secondaryBtn} type="button" onClick={exportVisibleResources}
+          disabled={loading || !filteredTopologyGraph.nodes.length} title="Export resources matching the current filters">
+          <Icon name="download" size={15} /> Export CSV
+        </button> : null}
+      </div>
       <div className={styles.status} role="status">
         {status ? <><span className={`${styles.statusDot} ${loading ? styles.statusDotLoading : ''}`} />{status}</> : null}
       </div>
