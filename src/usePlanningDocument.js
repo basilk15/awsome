@@ -140,8 +140,18 @@ export default function usePlanningDocument(serviceCatalog) {
     return () => window.clearTimeout(timer);
   }, [persistDocument, planningDocument]);
 
-  useEffect(() => () => {
-    if (dirtyRef.current) persistDocument(latestDocumentRef.current, false);
+  useEffect(() => {
+    const flushPendingSave = () => {
+      const current = latestDocumentRef.current;
+      if (planningDocumentFingerprint(current) !== lastSavedFingerprintRef.current) {
+        persistDocument(current, false);
+      }
+    };
+    window.addEventListener('pagehide', flushPendingSave);
+    return () => {
+      window.removeEventListener('pagehide', flushPendingSave);
+      flushPendingSave();
+    };
   }, [persistDocument]);
 
   const updateDocument = useCallback((updater) => {

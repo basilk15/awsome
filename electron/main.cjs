@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, net, protocol, session } = require('electron');
 const { spawn } = require('node:child_process');
-const fs = require('node:fs');
+const { ensurePrivateDirectory } = require('./privateDirectory.cjs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
@@ -13,7 +13,7 @@ const commands = new Set([
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
 const userData = path.join(app.getPath('appData'), 'com.basil.awsome.electron');
-fs.mkdirSync(userData, { recursive: true });
+ensurePrivateDirectory(userData);
 app.setPath('userData', userData);
 const dataHome = process.env.XDG_DATA_HOME || path.join(app.getPath('home'), '.local', 'share');
 const dataDir = path.join(dataHome, 'com.basil.awsome.electron');
@@ -38,6 +38,7 @@ function failPending(error) {
 
 function startCompanion() {
   if (companion && !companion.killed && companion.exitCode === null) return companion;
+  ensurePrivateDirectory(dataDir);
   const binary = companionPath();
   companion = spawn(binary, [dataDir, legacyData], { stdio: ['pipe', 'pipe', 'pipe'] });
   const child = companion;

@@ -232,3 +232,21 @@ test('multi-region import keeps each resource and relationship in its own region
   assert.deepEqual(new Set(plan.nodes.map((node) => node.region)), new Set(['eu-west-1', 'us-east-1']));
   assert.equal(plan.edges[0].region, 'us-east-1');
 });
+
+test('long AWS names and composite relationship IDs survive a planning save', async () => {
+  const { createPlanningDocument, serializePlanningDocument } = await import('../planningDocument.mjs');
+  const longName = 'production-'.repeat(18);
+  const graph = {
+    nodes: [
+      { data: { id: 'ec2-i-app', type: 'ec2', label: longName } },
+      { data: { id: 'vpc-vpc-main', type: 'vpc', label: 'Network' } }
+    ],
+    edges: [1, 2].map(i => ({ data: {
+      id: 'edge-' + 'registration-'.repeat(20) + i, source: 'ec2-i-app', target: 'vpc-vpc-main'
+    } }))
+  };
+  const plan = convertLiveTopologyToPlan(graph, context);
+  const saved = JSON.parse(serializePlanningDocument({ ...createPlanningDocument(), ...plan }, ['vpc', 'ec2']));
+  assert.equal(saved.nodes.find(node => node.serviceKey === 'ec2').originalResourceLabel, longName);
+  assert.equal(new Set(saved.edges.map(edge => edge.id)).size, 2);
+});

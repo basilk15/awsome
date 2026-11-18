@@ -46,13 +46,13 @@ function resourceIdFromLiveId(id, type) {
 }
 
 function uniqueId(base, usedIds) {
-  if (!usedIds.has(base)) {
-    usedIds.add(base);
-    return base;
+  // The planning document stores local IDs of up to 240 characters.
+  let id = base.slice(0, 240);
+  let suffix = 1;
+  while (usedIds.has(id)) {
+    const ending = `:${++suffix}`;
+    id = base.slice(0, 240 - ending.length) + ending;
   }
-  let suffix = 2;
-  while (usedIds.has(`${base}:${suffix}`)) suffix += 1;
-  const id = `${base}:${suffix}`;
   usedIds.add(id);
   return id;
 }
@@ -204,7 +204,7 @@ export function convertLiveTopologyToPlan(graph, context = {}) {
       y: 0,
       width: DEFAULT_NODE_WIDTH,
       height: DEFAULT_NODE_HEIGHT,
-      name: node.resourceLabel,
+      name: node.resourceLabel.slice(0, 160),
       provenance: IMPORTED_FROM_LIVE,
       originalResourceLabel: node.resourceLabel,
       resourceId: node.resourceId,

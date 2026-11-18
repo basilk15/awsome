@@ -71,6 +71,7 @@ import {
   DEFAULT_PLANNING_ZOOM,
   MAX_PLANNING_ZOOM,
   MAX_PLANNING_NODES,
+  normalizePlanningDocument,
   MIN_PLANNING_ZOOM
 } from './planningDocument.mjs';
 import usePlanningDocument from './usePlanningDocument';
@@ -1809,6 +1810,23 @@ export default function App() {
     startTransition(() => setMode(nextMode));
   }, [mode]);
 
+  const applyLivePlan = useCallback((graph, resetViewport) => {
+    let valid;
+    try {
+      valid = normalizePlanningDocument({ ...planning.planningDocument, ...graph }, PLANNING_SERVICES);
+    } catch (error) {
+      setError(`Could not import this topology into Planning: ${error.message}`);
+      return;
+    }
+    planning.setNodes(valid.nodes, { recordPriorState: true });
+    planning.setEdges(valid.edges);
+    if (resetViewport) {
+      planning.setCanvasZoom(DEFAULT_PLANNING_ZOOM);
+      planning.setCanvasPan({ x: 0, y: 0 });
+    }
+    switchMode('planning');
+  }, [planning, switchMode]);
+
   const openTopologyInPlanning = useCallback(() => {
     if (!topologyGraph || !topologyContext) return;
     const importedPlan = convertLiveTopologyToPlan(topologyGraph, topologyContext);
@@ -1816,32 +1834,17 @@ export default function App() {
       setPendingPlanImport(importedPlan);
       return;
     }
-    planning.setNodes(importedPlan.nodes);
-    planning.setEdges(importedPlan.edges);
-    planning.setCanvasZoom(DEFAULT_PLANNING_ZOOM);
-    planning.setCanvasPan({ x: 0, y: 0 });
-    switchMode('planning');
-  }, [planning, switchMode, topologyContext, topologyGraph]);
+    applyLivePlan(importedPlan, true);
+  }, [planning, applyLivePlan, topologyContext, topologyGraph]);
 
   const finishPlanImport = useCallback((choice) => {
     if (!pendingPlanImport) return;
-    if (choice === 'replace') {
-      planning.setNodes(pendingPlanImport.nodes);
-      planning.setEdges(pendingPlanImport.edges);
-      planning.setCanvasZoom(DEFAULT_PLANNING_ZOOM);
-      planning.setCanvasPan({ x: 0, y: 0 });
-    }
-    if (choice === 'append') {
-      const merged = mergePlanningGraphs(
-        { nodes: planning.nodes, edges: planning.edges },
-        pendingPlanImport
-      );
-      planning.setNodes(merged.nodes);
-      planning.setEdges(merged.edges);
-    }
     setPendingPlanImport(null);
-    if (choice !== 'cancel') switchMode('planning');
-  }, [pendingPlanImport, planning, switchMode]);
+    if (choice === 'replace') applyLivePlan(pendingPlanImport, true);
+    if (choice === 'append') {
+      applyLivePlan(mergePlanningGraphs(planning.planningDocument, pendingPlanImport), false);
+    }
+  }, [pendingPlanImport, planning, applyLivePlan]);
 
   const selectedService = selectedNode ? SERVICE_MAP[selectedNode.type] || { heading: 'AWS Resource', fallbackColor: '#6b8fca' } : null;
   const activeLegendItems = Object.keys(SERVICE_MAP).filter((type) => resourceCounts[type] > 0);
