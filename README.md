@@ -10,7 +10,7 @@ The app uses an Electron shell, a Vite and React interface, and a Rust companion
 
 ## Live topology
 
-Choose an AWS profile and up to 50 regions, then load a topology. At most three regions are scanned at once. Search matches resource names, IDs, types, and returned details. Service-type and region filters narrow the graph without resetting its pan or zoom. Use the mouse wheel to zoom around the pointer, drag empty canvas space to pan, drag a resource toward a canvas edge to reveal more space, and use **Fit** to show the full graph. Short connection captions appear where they fit; hover over or select a connection to read its full label.
+Choose an AWS profile and up to 50 regions, then select **Scan AWS**. At most three regions are scanned at once. Search matches resource names, IDs, types, and returned details. Service-type and region filters narrow the graph without resetting its pan or zoom. Use the mouse wheel to zoom around the pointer, drag empty canvas space to pan, drag a resource toward a canvas edge to reveal more space, and use **Fit** to show the full graph. Short connection captions appear where they fit; hover over or select a connection to read its full label.
 
 ### Inventory coverage
 
@@ -26,17 +26,17 @@ If an inventory call fails, awsome keeps the resources it did discover and marks
 
 ### Saved scans
 
-Successful scans are saved on the device. **Saved scans** can reopen a scan without AWS access, compare it with the displayed topology, or delete it after confirmation. Refreshing the same profile and region set compares the result with the most recent saved scan for that source.
+Successful scans are saved on the device. **Open saved scan** works offline and keeps the profile and regions set for your next AWS scan. **Compare with canvas** compares two different scans that used the same profile and region set. Changes are reported from the earlier scan to the later scan. When you scan the same profile and region set again, awsome automatically compares the result with the most recent saved scan for that source.
 
 The **Storage** control shows saved-scan disk use and previews the exact files that cleanup would remove. Cleanup keeps the selected number of newest scans per profile and region set, and rechecks the candidate list before deleting. Snapshot files contain resource inventory and metadata; protect the app data directory accordingly.
 
 ## Planning mode
 
-Planning mode is a local architecture editor. Add services from the AWS service library, move and resize nodes, draw directed connections, and add connection labels. Changes do not alter live scans or AWS resources. Undo and redo are available for planning edits.
+Planning mode is a local architecture editor. Add services from the AWS service library, then use **Connect** and select the source and destination in order. You can click each service, drag from source to destination, or focus each service and press Enter. Use the details panel to label connections. Undo and redo are available for planning edits.
 
 Planning documents autosave on this device and restore when the app starts. They include node names, positions, sizes, connections and their labels, and canvas zoom and pan. The architecture library supports multiple documents. Import and export use JSON documents with the `graphivo/planning-document` schema, version 1; **Export SVG** creates a self-contained diagram.
 
-To make a plan from a live or saved scan, open the topology in Live mode and select **Open in planning**. When an existing architecture is open, choose **Create new architecture** to save the scan as a separate plan and keep your current architecture in the library. You can also append the scan to the current canvas, replace its contents, or cancel. Append skips resources and relationships already imported from the same source. Imported nodes retain their source resource, profile, region, and provenance; editing their plan names or positions does not change the saved scan.
+To make a plan from a live or saved scan, select **Plan from full scan**. This includes importable resources hidden by filters. When an existing architecture is open, **Create new architecture** keeps it in the library and creates a separate plan from the scan. You can also add to the current architecture, replace its canvas, or cancel. Adding to an existing plan skips resources and connections already imported from the same source. Imported nodes retain their source resource, profile, region, and provenance; editing the plan leaves the saved scan intact.
 
 Invalid or unsupported JSON imports are rejected with an explanation. Importing a document whose ID already exists asks before replacing it. Deleting a saved architecture requires confirmation.
 

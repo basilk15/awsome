@@ -71,6 +71,7 @@ export default function usePlanningDocument(serviceCatalog) {
     return null;
   });
   const [lastSavedAt, setLastSavedAt] = useState(initialLoad.restored ? initialLoad.document.updatedAt : null);
+  const [saveIssue, setSaveIssue] = useState(null);
   const [librarySummaries, setLibrarySummaries] = useState(initialLibrary.summaries || []);
   const [, setHistoryVersion] = useState(0);
   const latestDocumentRef = useRef(planningDocument);
@@ -100,6 +101,7 @@ export default function usePlanningDocument(serviceCatalog) {
       }
       lastSavedFingerprintRef.current = planningDocumentFingerprint(saved);
       lastSavedTopologyFingerprintRef.current = planningTopologyFingerprint(saved);
+      setSaveIssue(libraryError ? 'Library save failed' : null);
       if (report || reportErrors) {
         setLastSavedAt(saved.updatedAt);
         if (libraryError) setFeedback({ type: 'error', text: `The active architecture was saved, but the library could not be updated: ${libraryError.message}` });
@@ -107,6 +109,7 @@ export default function usePlanningDocument(serviceCatalog) {
       }
       return saved;
     } catch (error) {
+      setSaveIssue('Unsaved changes');
       if (reportErrors) setFeedback({ type: 'error', text: error.message });
       return null;
     }
@@ -357,6 +360,7 @@ export default function usePlanningDocument(serviceCatalog) {
     lastSavedFingerprintRef.current = planningDocumentFingerprint(document);
     lastSavedTopologyFingerprintRef.current = planningTopologyFingerprint(document);
     lastLibrarySaveSucceededRef.current = true;
+    setSaveIssue(null);
     setLibrarySummaries(summaries);
     openDocument(document, document.updatedAt, { type: 'success', text: `Created “${document.name}” and saved it locally.` });
   }, [openDocument, persistDocument, serviceCatalog]);
@@ -370,7 +374,9 @@ export default function usePlanningDocument(serviceCatalog) {
       downloadJson(json, exportable.name);
       if (saved) {
         setLastSavedAt(saved.updatedAt);
-        setFeedback({ type: 'success', text: 'Architecture exported as JSON and saved locally.' });
+        setFeedback(lastLibrarySaveSucceededRef.current
+          ? { type: 'success', text: 'Architecture exported as JSON and saved locally.' }
+          : { type: 'error', text: 'Architecture exported as JSON. The local library could not be updated.' });
       } else {
         setFeedback({ type: 'info', text: 'Architecture exported as JSON. Local saving remains unavailable.' });
       }
@@ -389,6 +395,7 @@ export default function usePlanningDocument(serviceCatalog) {
     canvasPan: planningDocument.viewport.pan,
     feedback,
     lastSavedAt,
+    saveIssue,
     setNodes,
     setEdges,
     setCanvasZoom,

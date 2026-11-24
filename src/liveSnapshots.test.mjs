@@ -1,6 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareTopologySnapshots, snapshotChangeCount, snapshotUncertainCount } from './liveSnapshots.mjs';
+import { buildSnapshotComparison, compareTopologySnapshots, savedScanComparisonIssue, snapshotChangeCount, snapshotUncertainCount } from './liveSnapshots.mjs';
+
+test('saved scan comparison requires a different scan from the same profile and regions', () => {
+  const selected = { id: 'saved', profile: 'team', region: 'us-east-1, eu-west-1' };
+  const displayed = { id: 'viewing', profile: 'team', region: 'eu-west-1, us-east-1' };
+  assert.equal(savedScanComparisonIssue(selected, displayed), '');
+  assert.match(savedScanComparisonIssue(selected, { ...displayed, id: 'saved' }), /already viewing/);
+  assert.match(savedScanComparisonIssue({ ...selected, profile: 'other' }, displayed), /same AWS profile and regions/);
+  assert.match(savedScanComparisonIssue({ ...selected, region: 'us-east-1' }, displayed), /same AWS profile and regions/);
+  assert.match(savedScanComparisonIssue(selected, null), /Open or scan/);
+});
+
+test('comparison reports additions from the older scan to the newer scan in either viewing order', () => {
+  const older = { id: 'older', capturedAt: '900', graph: { nodes: [] } };
+  const newer = { id: 'newer', capturedAt: '1000', graph: { nodes: [{ data: { id: 'vpc-1' } }] } };
+  for (const pair of [[older, newer], [newer, older]]) {
+    const result = buildSnapshotComparison(...pair);
+    assert.equal(result.earlier.id, 'older');
+    assert.equal(result.later.id, 'newer');
+    assert.deepEqual(result.diff.nodes.added.map((node) => node.id), ['vpc-1']);
+    assert.equal(result.diff.nodes.removed.length, 0);
+  }
+});
 
 test('compares resources and relationships by stable ID', () => {
   const before = { nodes: [

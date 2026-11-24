@@ -1,3 +1,23 @@
+import { graphRegions, sameScanSource } from './liveRegions.mjs';
+
+export function savedScanComparisonIssue(selected, displayed) {
+  if (!selected) return '';
+  if (!displayed) return 'Open or scan a topology first.';
+  if (selected.id === displayed.id) return 'You’re already viewing this scan. Choose another to compare.';
+  if (!sameScanSource(
+    selected.profile, graphRegions(selected.graph, selected.region),
+    displayed.profile, graphRegions(displayed.graph, displayed.region)
+  )) return 'Choose a scan with the same AWS profile and regions.';
+  return '';
+}
+
+export function buildSnapshotComparison(selected, displayed) {
+  const [earlier, later] = Number(selected.capturedAt) <= Number(displayed.capturedAt)
+    ? [selected, displayed]
+    : [displayed, selected];
+  return { earlier, later, diff: compareTopologySnapshots(earlier.graph, later.graph) };
+}
+
 function byId(items) {
   return new Map((Array.isArray(items) ? items : [])
     .filter((item) => typeof item?.data?.id === 'string' && item.data.id)
