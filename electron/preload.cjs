@@ -7,8 +7,10 @@ const commands = new Set([
 ]);
 
 contextBridge.exposeInMainWorld('awsomeDesktop', {
-  invoke(command, args = {}) {
-    if (!commands.has(command)) return Promise.reject(new Error('Unknown desktop command'));
-    return ipcRenderer.invoke('awsome:invoke', command, args);
+  async invoke(command, args = {}) {
+    if (!commands.has(command)) throw new Error('Unknown desktop command');
+    const response = await ipcRenderer.invoke('awsome:invoke', command, args);
+    if (!response.ok) throw new Error(response.error);
+    return response.result;
   }
 });

@@ -10,6 +10,15 @@ export function graphRegions(graph, fallback = '') {
   return normaliseScanRegions('', typeof fallback === 'string' ? fallback.split(',') : []);
 }
 
+export function splitLiveGraphId(id) {
+  const prefix = /^([a-z][a-z0-9]*(?:-[a-z0-9]+)+-\d+)::/.exec(id);
+  return prefix ? { region: prefix[1], localId: id.slice(prefix[0].length) } : { region: '', localId: id };
+}
+
+export function liveNodeRegion(data, fallback = '') {
+  return data.region || splitLiveGraphId(data.id || '').region || fallback;
+}
+
 export function sameScanSource(leftProfile, leftRegions, rightProfile, rightRegions) {
   return leftProfile === rightProfile
     && normaliseScanRegions('', leftRegions).join(',') === normaliseScanRegions('', rightRegions).join(',');

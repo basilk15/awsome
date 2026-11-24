@@ -68,3 +68,10 @@ test('filters a combined topology by region', () => {
   ], edges: [] };
   assert.deepEqual(filterLiveTopologyGraph(combined, { selectedRegions: ['eu-west-1'] }).nodes.map((node) => node.data.region), ['eu-west-1']);
 });
+
+test('finds the region, type, and explicit resource ID on a namespaced target', () => {
+  const target = { data: { id: 'us-east-1::target_ip-group-2001:db8::7-80-0', resourceId: '2001:db8::9' } };
+  assert.equal(matchesLiveTopologyNode(target, {
+    selectedTypes: ['target_ip'], selectedRegions: ['us-east-1'], query: '2001:db8::9'
+  }), true);
+});

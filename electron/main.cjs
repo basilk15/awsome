@@ -134,11 +134,15 @@ function createWindow() {
 app.whenReady().then(() => {
   registerContentProtocol();
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  ipcMain.handle('awsome:invoke', (event, command, args) => {
+  ipcMain.handle('awsome:invoke', async (event, command, args) => {
     if (!trustedSender(event) || !commands.has(command) || !args || typeof args !== 'object' || Array.isArray(args)) {
       throw new Error('Desktop command denied');
     }
-    return invokeNative(command, args);
+    try {
+      return { ok: true, result: await invokeNative(command, args) };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
   });
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

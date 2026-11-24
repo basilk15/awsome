@@ -1,6 +1,13 @@
+import { splitLiveGraphId } from './liveRegions.mjs';
+import { getLiveTopologyNodeType } from './liveTopologyFilter.mjs';
+
 const registrationTypes = new Set(['target_ec2', 'target_ip', 'target_lambda', 'target_alb']);
 
-export function inventoryResourceId(data, localId, type) {
+export function inventoryResourceId(
+  data,
+  localId = splitLiveGraphId(data.id || '').localId,
+  type = getLiveTopologyNodeType(data)
+) {
   if (data.resourceId) return data.resourceId;
   // The graph keys each registration by target group, target, port and index.
   if (registrationTypes.has(type) && data.label) return data.label;

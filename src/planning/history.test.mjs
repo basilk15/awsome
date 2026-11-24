@@ -111,6 +111,18 @@ test('does not add duplicate snapshots or discard redo for a no-op record', () =
   assert.equal(canRedoPlanningHistory(unchanged), true);
 });
 
+test('viewport changes and save timestamps do not create edits or clear redo', () => {
+  const initial = document('Initial');
+  const moved = document('Initial', { nodes: [{ ...initial.nodes[0], x: 30, y: 20 }] });
+  const edited = recordPlanningHistory(createPlanningHistory(initial), moved);
+  const undone = undoPlanningHistory(edited);
+  const navigated = { ...initial, viewport: { zoom: 2, pan: { x: -90, y: -60 } }, updatedAt: '2026-08-01' };
+
+  assert.equal(undone.past.length, 0);
+  assert.strictEqual(recordPlanningHistory(undone, navigated), undone);
+  assert.deepEqual(redoPlanningHistory(undone).present.nodes, moved.nodes);
+});
+
 test('reset clears both stacks, preserves the limit by default, and snapshots the new document', () => {
   const original = document('A');
   const changed = recordPlanningHistory(

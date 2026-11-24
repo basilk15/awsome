@@ -1,3 +1,7 @@
+import { liveNodeRegion, splitLiveGraphId } from '../liveRegions.mjs';
+import { getLiveTopologyNodeType } from '../liveTopologyFilter.mjs';
+import { inventoryResourceId } from '../resourceInventory.mjs';
+
 export const PLANNING_CANVAS_SIZE = 3000;
 export const DEFAULT_NODE_WIDTH = 168;
 export const DEFAULT_NODE_HEIGHT = 84;
@@ -33,18 +37,6 @@ function cleanString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function typeFromId(id) {
-  const localId = id.split('::').at(-1);
-  const separator = localId.indexOf('-');
-  return separator > 0 ? localId.slice(0, separator) : '';
-}
-
-function resourceIdFromLiveId(id, type) {
-  const localId = id.split('::').at(-1);
-  const prefix = `${type}-`;
-  return localId.startsWith(prefix) ? localId.slice(prefix.length) : localId;
-}
-
 function uniqueId(base, usedIds) {
   // The planning document stores local IDs of up to 240 characters.
   let id = base.slice(0, 240);
@@ -61,9 +53,9 @@ function normalizeLiveNodes(graph, context) {
   const candidates = (Array.isArray(graph?.nodes) ? graph.nodes : []).flatMap((node) => {
     const data = node && typeof node.data === 'object' ? node.data : null;
     const liveNodeId = cleanString(data?.id);
-    const liveResourceType = cleanString(data?.type) || typeFromId(liveNodeId);
+    const liveResourceType = getLiveTopologyNodeType(data);
     if (!liveNodeId || !LIVE_SERVICE_DEFINITIONS[liveResourceType]) return [];
-    const resourceId = cleanString(data.resourceId) || resourceIdFromLiveId(liveNodeId, liveResourceType);
+    const resourceId = cleanString(inventoryResourceId(data, splitLiveGraphId(liveNodeId).localId, liveResourceType));
     if (!resourceId) return [];
     const resourceLabel = cleanString(data.label) || resourceId;
     return [{
@@ -72,7 +64,7 @@ function normalizeLiveNodes(graph, context) {
       resourceId,
       resourceLabel,
       profile: cleanString(context?.profile) || 'default',
-      region: cleanString(data.region) || cleanString(context?.region) || 'unknown'
+      region: cleanString(liveNodeRegion(data, context?.region)) || 'unknown'
     }];
   });
 
@@ -233,16 +225,17 @@ export function convertLiveTopologyToPlan(graph, context = {}) {
 
 function importedNodeIdentity(node) {
   if (node?.provenance !== IMPORTED_FROM_LIVE) return '';
-  const resourceIdentity = cleanString(node.liveNodeId)
+  const resourceIdentity = splitLiveGraphId(cleanString(node.liveNodeId)).localId
     || `${cleanString(node.liveResourceType)}\u0000${cleanString(node.resourceId)}`;
   return `${cleanString(node.profile)}\u0000${cleanString(node.region)}\u0000${resourceIdentity}`;
 }
 
 function importedEdgeIdentity(edge) {
   if (edge?.provenance !== IMPORTED_FROM_LIVE) return '';
-  const relationshipIdentity = cleanString(edge.sourceEdgeId)
+  const { region, localId } = splitLiveGraphId(cleanString(edge.sourceEdgeId));
+  const relationshipIdentity = localId
     || `${cleanString(edge.source)}\u0000${cleanString(edge.target)}\u0000${cleanString(edge.label)}`;
-  return `${cleanString(edge.profile)}\u0000${cleanString(edge.region)}\u0000${relationshipIdentity}`;
+  return `${cleanString(edge.profile)}\u0000${region || cleanString(edge.region)}\u0000${relationshipIdentity}`;
 }
 
 function overlapsAny(node, existingNodes) {

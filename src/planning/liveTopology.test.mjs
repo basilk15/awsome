@@ -233,6 +233,53 @@ test('multi-region import keeps each resource and relationship in its own region
   assert.equal(plan.edges[0].region, 'us-east-1');
 });
 
+test('appending overlapping single- and multi-region scans reuses existing services and edges', () => {
+  const single = convertLiveTopologyToPlan(liveGraph, context);
+  const regionalId = (id) => `${context.region}::${id}`;
+  const multi = convertLiveTopologyToPlan({
+    nodes: [...liveGraph.nodes.map(({ data }) => ({ data: { ...data, id: regionalId(data.id) } })),
+      { data: { id: 'us-east-1::vpc-vpc-123', label: 'different region' } }],
+    edges: liveGraph.edges.map(({ data }) => ({ data: { ...data, id: regionalId(data.id),
+      source: regionalId(data.source), target: regionalId(data.target) } }))
+  }, { ...context, region: 'eu-west-1, us-east-1' });
+
+  for (const [existing, incoming] of [[single, multi], [multi, single]]) {
+    const merged = mergePlanningGraphs(existing, incoming);
+    assert.equal(merged.nodes.length, single.nodes.length + 1);
+    assert.deepEqual(merged.edges, existing.edges);
+    assert.deepEqual(merged.nodes.slice(0, existing.nodes.length), existing.nodes);
+  }
+});
+
+test('preserves the AWS resource ID for IPv6 targets in imported plans', () => {
+  const graph = { nodes: [{ data: {
+    id: 'us-east-1::target_ip-arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/web/a-2001:db8::7-80-0',
+    label: '2001:db8::7'
+  } }], edges: [] };
+  const plan = convertLiveTopologyToPlan(graph, { profile: 'team', region: 'eu-west-1, us-east-1' });
+  assert.equal(plan.nodes.length, 1);
+  assert.equal(plan.nodes[0].resourceId, '2001:db8::7');
+  assert.equal(plan.nodes[0].region, 'us-east-1');
+});
+
+test('appending keeps separate regional records of a cross-region peering relationship', () => {
+  const vpcId = 'us-east-1::vpc-vpc-1';
+  const regions = ['us-east-1', 'us-west-1'];
+  const graph = {
+    nodes: [{ data: { id: vpcId } }, ...regions.map(region => ({ data: { id: `${region}::vpc_peering-pcx-1` } }))],
+    edges: regions.map(region => ({ data: {
+      id: `${region}::edge-vpc-peering-requester-vpc-1-pcx-1`,
+      source: vpcId,
+      target: `${region}::vpc_peering-pcx-1`
+    } }))
+  };
+  const imported = convertLiveTopologyToPlan(graph, { ...context, region: regions.join(', ') });
+  const appended = mergePlanningGraphs({ nodes: [], edges: [] }, imported);
+  assert.equal(appended.edges.length, 2);
+  assert.equal(new Set(appended.edges.map(edge => edge.target)).size, 2);
+  assert.deepEqual(mergePlanningGraphs(appended, imported), appended);
+});
+
 test('long AWS names and composite relationship IDs survive a planning save', async () => {
   const { createPlanningDocument, serializePlanningDocument } = await import('../planningDocument.mjs');
   const longName = 'production-'.repeat(18);

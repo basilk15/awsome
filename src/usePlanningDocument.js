@@ -14,6 +14,7 @@ import {
   canRedoPlanningHistory,
   canUndoPlanningHistory,
   createPlanningHistory,
+  hasPlanningHistoryEdit,
   recordPlanningHistory,
   redoPlanningHistory,
   resetPlanningHistory,
@@ -62,6 +63,7 @@ export default function usePlanningDocument(serviceCatalog) {
   }
   const initialLibrary = initialLibraryRef.current;
   const [planningDocument, setPlanningDocument] = useState(initialLoad.document);
+  const { id: documentId, name: documentName, nodes, edges } = planningDocument;
   const [feedback, setFeedback] = useState(() => {
     if (initialLoad.error) return { type: 'error', text: initialLoad.error };
     if (initialLibrary.warnings?.length) return { type: 'error', text: initialLibrary.warnings[0].message };
@@ -74,9 +76,7 @@ export default function usePlanningDocument(serviceCatalog) {
   const latestDocumentRef = useRef(planningDocument);
   const lastSavedFingerprintRef = useRef(planningDocumentFingerprint(planningDocument));
   const lastSavedTopologyFingerprintRef = useRef(planningTopologyFingerprint(planningDocument));
-  const dirtyRef = useRef(false);
   const historyRef = useRef(createPlanningHistory(planningDocument));
-  const replayedFingerprintRef = useRef(null);
   const lastLibrarySaveSucceededRef = useRef(true);
 
   latestDocumentRef.current = planningDocument;
@@ -100,7 +100,6 @@ export default function usePlanningDocument(serviceCatalog) {
       }
       lastSavedFingerprintRef.current = planningDocumentFingerprint(saved);
       lastSavedTopologyFingerprintRef.current = planningTopologyFingerprint(saved);
-      dirtyRef.current = false;
       if (report || reportErrors) {
         setLastSavedAt(saved.updatedAt);
         if (libraryError) setFeedback({ type: 'error', text: `The active architecture was saved, but the library could not be updated: ${libraryError.message}` });
@@ -114,31 +113,31 @@ export default function usePlanningDocument(serviceCatalog) {
   }, [serviceCatalog]);
 
   useEffect(() => {
-    const fingerprint = planningDocumentFingerprint(planningDocument);
-    dirtyRef.current = fingerprint !== lastSavedFingerprintRef.current;
+    const needsSave = planningDocumentFingerprint(planningDocument) !== lastSavedFingerprintRef.current;
     const topologyChanged = planningTopologyFingerprint(planningDocument) !== lastSavedTopologyFingerprintRef.current;
-    if (!dirtyRef.current || !topologyChanged) {
+    if (!needsSave || !topologyChanged) {
       setFeedback((current) => current?.text === 'Saving changes…' ? null : current);
     }
-    if (!dirtyRef.current) return undefined;
+    if (!needsSave) return undefined;
 
     if (topologyChanged) setFeedback({ type: 'info', text: 'Saving changes…' });
     const timer = window.setTimeout(() => {
-      const fingerprint = planningDocumentFingerprint(planningDocument);
-      if (replayedFingerprintRef.current === fingerprint) {
-        replayedFingerprintRef.current = null;
-      } else {
-        const nextHistory = recordPlanningHistory(historyRef.current, planningDocument);
-        if (nextHistory !== historyRef.current) {
-          historyRef.current = nextHistory;
-          setHistoryVersion((version) => version + 1);
-        }
-        replayedFingerprintRef.current = null;
-      }
       persistDocument(planningDocument, topologyChanged, true);
     }, 350);
     return () => window.clearTimeout(timer);
   }, [persistDocument, planningDocument]);
+
+  useEffect(() => {
+    if (!hasPlanningHistoryEdit(historyRef.current, latestDocumentRef.current)) return undefined;
+    const timer = window.setTimeout(() => {
+      const nextHistory = recordPlanningHistory(historyRef.current, latestDocumentRef.current);
+      if (nextHistory !== historyRef.current) {
+        historyRef.current = nextHistory;
+        setHistoryVersion((version) => version + 1);
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [documentId, documentName, nodes, edges]);
 
   useEffect(() => {
     const flushPendingSave = () => {
@@ -209,10 +208,7 @@ export default function usePlanningDocument(serviceCatalog) {
     const saved = persistDocument(nextDocument, false);
     const next = saved || nextDocument;
     const fullySaved = Boolean(saved && lastLibrarySaveSucceededRef.current);
-    if (saved) lastSavedFingerprintRef.current = planningDocumentFingerprint(saved);
-    dirtyRef.current = !saved;
     historyRef.current = resetPlanningHistory(historyRef.current, next);
-    replayedFingerprintRef.current = null;
     setPlanningDocument(next);
     setHistoryVersion((version) => version + 1);
     setLastSavedAt(saved?.updatedAt || null);
@@ -222,23 +218,23 @@ export default function usePlanningDocument(serviceCatalog) {
   }, [persistDocument]);
 
   const undo = useCallback(() => {
-    let history = recordPlanningHistory(historyRef.current, latestDocumentRef.current);
-    history = undoPlanningHistory(history);
+    const current = latestDocumentRef.current;
+    const history = undoPlanningHistory(recordPlanningHistory(historyRef.current, current));
     if (history === historyRef.current) return false;
     historyRef.current = history;
-    replayedFingerprintRef.current = planningDocumentFingerprint(history.present);
-    setPlanningDocument(history.present);
+    setPlanningDocument({ ...history.present, viewport: current.viewport });
     setHistoryVersion((version) => version + 1);
     setFeedback({ type: 'info', text: 'Undid the last planning change.' });
     return true;
   }, []);
 
   const redo = useCallback(() => {
+    const current = latestDocumentRef.current;
+    if (hasPlanningHistoryEdit(historyRef.current, current)) return false;
     const history = redoPlanningHistory(historyRef.current);
     if (history === historyRef.current) return false;
     historyRef.current = history;
-    replayedFingerprintRef.current = planningDocumentFingerprint(history.present);
-    setPlanningDocument(history.present);
+    setPlanningDocument({ ...history.present, viewport: current.viewport });
     setHistoryVersion((version) => version + 1);
     setFeedback({ type: 'info', text: 'Redid the planning change.' });
     return true;
@@ -357,8 +353,8 @@ export default function usePlanningDocument(serviceCatalog) {
 
   return {
     planningDocument,
-    nodes: planningDocument.nodes,
-    edges: planningDocument.edges,
+    nodes,
+    edges,
     canvasZoom: planningDocument.viewport.zoom,
     canvasPan: planningDocument.viewport.pan,
     feedback,
@@ -376,8 +372,7 @@ export default function usePlanningDocument(serviceCatalog) {
     deleteArchitecture,
     undo,
     redo,
-    canUndo: canUndoPlanningHistory(historyRef.current)
-      || planningDocumentFingerprint(planningDocument) !== planningDocumentFingerprint(historyRef.current.present),
-    canRedo: canRedoPlanningHistory(historyRef.current)
+    canUndo: canUndoPlanningHistory(historyRef.current) || hasPlanningHistoryEdit(historyRef.current, planningDocument),
+    canRedo: canRedoPlanningHistory(historyRef.current) && !hasPlanningHistoryEdit(historyRef.current, planningDocument)
   };
 }

@@ -7,10 +7,14 @@ function normalizeLimit(limit) {
   return limit;
 }
 
-function snapshot(document) {
+function assertDocument(document) {
   if (document === null || typeof document !== 'object' || Array.isArray(document)) {
     throw new TypeError('A planning document must be an object.');
   }
+}
+
+function snapshot(document) {
+  assertDocument(document);
   return structuredClone(document);
 }
 
@@ -67,14 +71,20 @@ export function resetPlanningHistory(history, document, options = {}) {
   });
 }
 
-export function recordPlanningHistory(history, document) {
+export function hasPlanningHistoryEdit(history, document) {
   assertHistory(history);
-  const nextDocument = snapshot(document);
-  if (valuesEqual(history.present, nextDocument)) return history;
+  assertDocument(document);
+  const { viewport: priorViewport, updatedAt: priorTimestamp, ...prior } = history.present;
+  const { viewport, updatedAt, ...current } = document;
+  return !valuesEqual(prior, current);
+}
+
+export function recordPlanningHistory(history, document) {
+  if (!hasPlanningHistoryEdit(history, document)) return history;
 
   return {
     past: [...history.past, history.present].slice(-history.limit),
-    present: nextDocument,
+    present: snapshot(document),
     future: [],
     limit: history.limit
   };

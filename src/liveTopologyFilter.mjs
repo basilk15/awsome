@@ -1,3 +1,5 @@
+import { liveNodeRegion, splitLiveGraphId } from './liveRegions.mjs';
+
 /**
  * Helpers for narrowing the AWS live-topology response before it is rendered.
  * The functions deliberately keep Cytoscape-shaped node and edge objects intact
@@ -48,7 +50,7 @@ export function getLiveTopologyNodeType(node) {
   const explicitType = text(data.type).trim();
   if (explicitType) return explicitType;
 
-  const id = text(data.id).trim().split('::').at(-1);
+  const { localId: id } = splitLiveGraphId(text(data.id).trim());
   const separator = id.indexOf('-');
   return separator > 0 ? id.slice(0, separator) : '';
 }
@@ -83,11 +85,12 @@ export function matchesLiveTopologyNode(node, { query = '', selectedTypes, selec
   if (selected.size && !selected.has(normalise(type))) return false;
 
   const selectedRegionSet = normaliseLiveTopologyTypes(selectedRegions);
-  if (selectedRegionSet.size && !selectedRegionSet.has(normalise(data.region))) return false;
+  const region = liveNodeRegion(data);
+  if (selectedRegionSet.size && !selectedRegionSet.has(normalise(region))) return false;
 
   const queryText = normalise(query);
   if (!queryText) return true;
-  const searchable = [data.label, id, type, data.region, detailSearchText(data.details)]
+  const searchable = [data.label, id, data.resourceId, type, region, detailSearchText(data.details)]
     .map(normalise)
     .join(' ');
   return searchable.includes(queryText);
