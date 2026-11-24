@@ -30,7 +30,7 @@ jobs:
       - run: npm test
       - run: CARGO_TARGET_DIR=src-tauri/target CARGO_BUILD_JOBS=1 cargo test --manifest-path native/Cargo.toml --release --locked
       - run: cargo fmt --manifest-path native/Cargo.toml --all -- --check
-      - run: npm run build
+      - run: npm run build -- --publish never
       - name: Inspect Debian package
         run: dpkg-deb --info release/*.deb
       - name: Smoke-test installed desktop app
