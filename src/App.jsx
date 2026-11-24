@@ -69,6 +69,7 @@ import {
 } from './planning/canvasExport.mjs';
 import {
   DEFAULT_PLANNING_ZOOM,
+  hasPlanningWork,
   MAX_PLANNING_ZOOM,
   MAX_PLANNING_NODES,
   normalizePlanningDocument,
@@ -1256,6 +1257,7 @@ export default function App() {
   const snapshotActionRef = useRef(false);
   const snapshotListRequestRef = useRef(0);
   const regionPickerRef = useRef(null);
+  const planImportDialogRef = useRef(null);
   const scanRegions = useMemo(() => normaliseScanRegions(region, additionalRegions), [region, additionalRegions]);
   const sourceBusy = loading || Boolean(snapshotAction);
 
@@ -1882,8 +1884,13 @@ export default function App() {
   const openTopologyInPlanning = useCallback(() => {
     if (!topologyGraph || !topologyContext) return;
     const importedPlan = convertLiveTopologyToPlan(topologyGraph, topologyContext);
-    if (planning.nodes.length || planning.edges.length) {
-      setPendingPlanImport(importedPlan);
+    const current = planning.planningDocument;
+    const saved = planning.lastSavedAt || planning.librarySummaries.some((summary) => summary.id === current.id);
+    if (saved || hasPlanningWork(current)) {
+      setPendingPlanImport({
+        graph: importedPlan,
+        name: `AWS topology · ${new Date(topologyContext.loadedAt).toLocaleString()} · ${topologyContext.profile} · ${topologyContext.region}`
+      });
       return;
     }
     applyLivePlan(importedPlan, true);
@@ -1891,12 +1898,28 @@ export default function App() {
 
   const finishPlanImport = useCallback((choice) => {
     if (!pendingPlanImport) return;
+    planImportDialogRef.current?.close();
     setPendingPlanImport(null);
-    if (choice === 'replace') applyLivePlan(pendingPlanImport, true);
+    const { graph, name } = pendingPlanImport;
+    if (choice === 'replace') applyLivePlan(graph, true);
     if (choice === 'append') {
-      applyLivePlan(mergePlanningGraphs(planning.planningDocument, pendingPlanImport), false);
+      applyLivePlan(mergePlanningGraphs(planning.planningDocument, graph), false);
     }
-  }, [pendingPlanImport, planning, applyLivePlan]);
+    if (choice === 'new') {
+      try {
+        planning.createArchitectureFromGraph(graph, name);
+        setError('');
+        switchMode('planning');
+      } catch (error) {
+        setError(`Could not create an architecture from this topology: ${error.message}`);
+      }
+    }
+  }, [pendingPlanImport, planning, applyLivePlan, switchMode]);
+
+  useEffect(() => {
+    const dialog = planImportDialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+  }, [pendingPlanImport]);
 
   const selectedService = selectedNode ? SERVICE_MAP[selectedNode.type] || { heading: 'AWS Resource', fallbackColor: '#6b8fca' } : null;
   const activeLegendItems = Object.keys(SERVICE_MAP).filter((type) => resourceCounts[type] > 0);
@@ -2061,19 +2084,25 @@ export default function App() {
         </div>
       </div>
       </div>
-      {pendingPlanImport ? <div className={styles.dialogBackdrop} role="presentation">
-        <section className={styles.importDialog} role="dialog" aria-modal="true" aria-labelledby="import-plan-title">
+      {pendingPlanImport ? (
+        <dialog
+          className={styles.importDialog}
+          ref={planImportDialogRef}
+          aria-labelledby="import-plan-title"
+          onCancel={(event) => { event.preventDefault(); finishPlanImport('cancel'); }}
+        >
           <span className={styles.dialogIcon}><Icon name="layers" size={20} /></span>
-          <h2 id="import-plan-title">Planning canvas already has work</h2>
-          <p>Choose how to add this live snapshot to your plan.</p>
-          <div className={styles.importSummary}><span>{pendingPlanImport.nodes.length} resources</span><span>{pendingPlanImport.edges.length} relationships</span></div>
+          <h2 id="import-plan-title">Open topology in Planning</h2>
+          <p>Choose where to put the resources and relationships from this scan.</p>
+          <div className={styles.importSummary}><span>{pendingPlanImport.graph.nodes.length} resources</span><span>{pendingPlanImport.graph.edges.length} relationships</span></div>
           <div className={styles.importChoices}>
+            <button className={`${styles.importChoice} ${styles.importChoicePrimary}`} type="button" onClick={() => finishPlanImport('new')}><strong>Create new architecture</strong><span>Save this scan as a separate plan and keep your current architecture.</span></button>
             <button className={styles.importChoice} type="button" onClick={() => finishPlanImport('append')}><strong>Append to canvas</strong><span>Keep your work and add resources that are not already in the plan.</span></button>
-            <button className={`${styles.importChoice} ${styles.importChoicePrimary}`} type="button" onClick={() => finishPlanImport('replace')}><strong>Replace canvas</strong><span>Start a new plan using this snapshot.</span></button>
+            <button className={styles.importChoice} type="button" onClick={() => finishPlanImport('replace')}><strong>Replace canvas</strong><span>Replace the contents of your current architecture with this scan.</span></button>
           </div>
           <div className={styles.dialogActions}><button className={styles.secondaryBtn} type="button" onClick={() => finishPlanImport('cancel')}>Cancel</button></div>
-        </section>
-      </div> : null}
+        </dialog>
+      ) : null}
     </section>
   </main>;
 }

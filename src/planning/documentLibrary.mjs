@@ -356,6 +356,7 @@ function readLibraryState(storage, serviceCatalog, options = {}) {
   return {
     documents,
     index,
+    rawIndex,
     warnings,
     recovered,
     enumerationAvailable: enumeration.available,
@@ -442,17 +443,31 @@ export function upsertPlanningDocument(
 
   const entryKey = planningDocumentLibraryEntryKey(normalized.id);
   const previousEntry = readItem(storage, entryKey);
+  if (options.activateNew && (previousEntry != null || state.index.ids.includes(normalized.id))) {
+    throw new PlanningDocumentLibraryError(
+      'An architecture already uses this document ID. Try creating the architecture again.',
+      'document_already_exists'
+    );
+  }
   const nextDocuments = new Map(state.documents);
   nextDocuments.set(normalized.id, normalized);
   const nextIndex = indexFromDocuments(nextDocuments);
+  const json = JSON.stringify(normalized);
 
-  writeItem(storage, entryKey, JSON.stringify(normalized));
+  writeItem(storage, entryKey, json);
+  let indexWritten = false;
   try {
     writeItem(storage, PLANNING_DOCUMENT_LIBRARY_INDEX_KEY, JSON.stringify(nextIndex));
+    indexWritten = true;
+    if (options.activateNew) writeItem(storage, PLANNING_DOCUMENT_STORAGE_KEY, json);
   } catch (error) {
     try {
       if (previousEntry == null) removeItem(storage, entryKey);
       else writeItem(storage, entryKey, previousEntry);
+      if (indexWritten) {
+        if (state.rawIndex == null) removeItem(storage, PLANNING_DOCUMENT_LIBRARY_INDEX_KEY);
+        else writeItem(storage, PLANNING_DOCUMENT_LIBRARY_INDEX_KEY, state.rawIndex);
+      }
     } catch (rollbackError) {
       throw new PlanningDocumentLibraryError(
         `${error.message} The entry rollback also failed: ${rollbackError.message} Reload the library and export any readable architectures before trying again.`,

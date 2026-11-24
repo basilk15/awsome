@@ -71,6 +71,57 @@ function document(id, name, now, serviceKey = 'ec2') {
   };
 }
 
+test('activates a new architecture in local storage and preserves the previous library entry', () => {
+  const storage = new MemoryStorage();
+  const previous = upsertPlanningDocument(storage, document('previous', 'Current plan', firstTime), catalog);
+  storage.setItem(PLANNING_DOCUMENT_STORAGE_KEY, JSON.stringify(previous.document));
+  const imported = document('scan', 'AWS topology', secondTime);
+
+  const saved = upsertPlanningDocument(storage, imported, catalog, { activateNew: true, now: secondTime });
+
+  assert.deepEqual(JSON.parse(storage.getItem(PLANNING_DOCUMENT_STORAGE_KEY)), saved.document);
+  assert.deepEqual(loadPlanningDocumentFromLibrary(storage, 'scan', catalog).document, saved.document);
+  assert.deepEqual(loadPlanningDocumentFromLibrary(storage, 'previous', catalog).document, previous.document);
+});
+
+test('keeps the existing architecture when a new architecture uses a stored document ID', () => {
+  const storage = new MemoryStorage();
+  const previous = upsertPlanningDocument(storage, document('same-id', 'Current plan', firstTime), catalog);
+  storage.setItem(PLANNING_DOCUMENT_STORAGE_KEY, JSON.stringify(previous.document));
+  const before = new Map(storage.values);
+
+  assert.throws(() => upsertPlanningDocument(storage, document('same-id', 'AWS topology', secondTime), catalog, {
+    activateNew: true
+  }), { code: 'document_already_exists' });
+  assert.deepEqual(storage.values, before);
+});
+
+test('rolls back the library entry and index when the new architecture cannot become active', () => {
+  const storage = new MemoryStorage();
+  const previous = upsertPlanningDocument(storage, document('previous', 'Current plan', firstTime), catalog);
+  storage.setItem(PLANNING_DOCUMENT_STORAGE_KEY, JSON.stringify(previous.document));
+  const before = new Map(storage.values);
+  storage.failSet.add(PLANNING_DOCUMENT_STORAGE_KEY);
+
+  assert.throws(() => upsertPlanningDocument(storage, document('scan', 'AWS topology', secondTime), catalog, {
+    activateNew: true
+  }), { code: 'storage_write_failed' });
+  assert.deepEqual(storage.values, before);
+});
+
+test('keeps the current plan active when the new architecture cannot be added to the library', () => {
+  const storage = new MemoryStorage();
+  const previous = upsertPlanningDocument(storage, document('previous', 'Current plan', firstTime), catalog);
+  storage.setItem(PLANNING_DOCUMENT_STORAGE_KEY, JSON.stringify(previous.document));
+  const before = new Map(storage.values);
+  storage.failSet.add(PLANNING_DOCUMENT_LIBRARY_INDEX_KEY);
+
+  assert.throws(() => upsertPlanningDocument(storage, document('scan', 'AWS topology', secondTime), catalog, {
+    activateNew: true
+  }), { code: 'storage_write_failed' });
+  assert.deepEqual(storage.values, before);
+});
+
 test('upserts separate versioned entries and lists current summaries newest first', () => {
   const storage = new MemoryStorage();
   const first = upsertPlanningDocument(storage, document('plan one', 'First', firstTime), catalog, {

@@ -122,7 +122,9 @@ export default function usePlanningDocument(serviceCatalog) {
 
     if (topologyChanged) setFeedback({ type: 'info', text: 'Saving changes…' });
     const timer = window.setTimeout(() => {
-      persistDocument(planningDocument, topologyChanged, true);
+      if (latestDocumentRef.current.id === planningDocument.id) {
+        persistDocument(planningDocument, topologyChanged, true);
+      }
     }, 350);
     return () => window.clearTimeout(timer);
   }, [persistDocument, planningDocument]);
@@ -204,18 +206,22 @@ export default function usePlanningDocument(serviceCatalog) {
     return true;
   }, [updateDocument]);
 
+  const openDocument = useCallback((document, savedAt, feedback) => {
+    latestDocumentRef.current = document;
+    historyRef.current = resetPlanningHistory(historyRef.current, document);
+    setPlanningDocument(document);
+    setHistoryVersion((version) => version + 1);
+    setLastSavedAt(savedAt);
+    setFeedback(feedback);
+  }, []);
+
   const replaceAndSave = useCallback((nextDocument, successMessage) => {
     const saved = persistDocument(nextDocument, false);
-    const next = saved || nextDocument;
     const fullySaved = Boolean(saved && lastLibrarySaveSucceededRef.current);
-    historyRef.current = resetPlanningHistory(historyRef.current, next);
-    setPlanningDocument(next);
-    setHistoryVersion((version) => version + 1);
-    setLastSavedAt(saved?.updatedAt || null);
-    setFeedback(fullySaved
+    openDocument(saved || nextDocument, saved?.updatedAt || null, fullySaved
       ? { type: 'success', text: successMessage }
       : { type: 'error', text: 'The architecture is open, but it could not be saved to the local library. Export it as JSON to keep a copy.' });
-  }, [persistDocument]);
+  }, [openDocument, persistDocument]);
 
   const undo = useCallback(() => {
     const current = latestDocumentRef.current;
@@ -331,6 +337,30 @@ export default function usePlanningDocument(serviceCatalog) {
     }
   }, [librarySummaries, replaceAndSave, serviceCatalog]);
 
+  const createArchitectureFromGraph = useCallback(({ nodes, edges }, name) => {
+    const current = latestDocumentRef.current;
+    const { document: libraryCopy } = loadPlanningDocumentFromLibrary(storageRef.current, current.id, serviceCatalog);
+    const currentFingerprint = planningDocumentFingerprint(current);
+    const currentNeedsSave = !libraryCopy || currentFingerprint !== planningDocumentFingerprint(libraryCopy)
+      || currentFingerprint !== lastSavedFingerprintRef.current;
+    if (currentNeedsSave) {
+      const saved = persistDocument(current, false, true);
+      if (!saved || !lastLibrarySaveSucceededRef.current) {
+        throw new Error('Could not save the current architecture to the library. Open Planning to export it as JSON.');
+      }
+    }
+
+    const candidate = { ...createPlanningDocument({ name: name.slice(0, 120).trimEnd() }), nodes, edges };
+    const { document, summaries } = upsertPlanningDocument(storageRef.current, candidate, serviceCatalog, {
+      activateNew: true
+    });
+    lastSavedFingerprintRef.current = planningDocumentFingerprint(document);
+    lastSavedTopologyFingerprintRef.current = planningTopologyFingerprint(document);
+    lastLibrarySaveSucceededRef.current = true;
+    setLibrarySummaries(summaries);
+    openDocument(document, document.updatedAt, { type: 'success', text: `Created “${document.name}” and saved it locally.` });
+  }, [openDocument, persistDocument, serviceCatalog]);
+
   const exportArchitecture = useCallback(() => {
     const current = latestDocumentRef.current;
     const saved = persistDocument(current, false);
@@ -370,6 +400,7 @@ export default function usePlanningDocument(serviceCatalog) {
     librarySummaries,
     openArchitecture,
     deleteArchitecture,
+    createArchitectureFromGraph,
     undo,
     redo,
     canUndo: canUndoPlanningHistory(historyRef.current) || hasPlanningHistoryEdit(historyRef.current, planningDocument),

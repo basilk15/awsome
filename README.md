@@ -36,7 +36,7 @@ Planning mode is a local architecture editor. Add services from the AWS service 
 
 Planning documents autosave on this device and restore when the app starts. They include node names, positions, sizes, connections and their labels, and canvas zoom and pan. The architecture library supports multiple documents. Import and export use JSON documents with the `graphivo/planning-document` schema, version 1; **Export SVG** creates a self-contained diagram.
 
-To make a plan from a scan, load a topology in Live mode and select **Open in planning**. If the planning canvas already contains work, choose to append the scan, replace the canvas, or cancel. Append skips resources and relationships already imported from the same source. Imported nodes retain their source resource, profile, region, and provenance; editing their plan names or positions does not change the saved scan.
+To make a plan from a live or saved scan, open the topology in Live mode and select **Open in planning**. When an existing architecture is open, choose **Create new architecture** to save the scan as a separate plan and keep your current architecture in the library. You can also append the scan to the current canvas, replace its contents, or cancel. Append skips resources and relationships already imported from the same source. Imported nodes retain their source resource, profile, region, and provenance; editing their plan names or positions does not change the saved scan.
 
 Invalid or unsupported JSON imports are rejected with an explanation. Importing a document whose ID already exists asks before replacing it. Deleting a saved architecture requires confirmation.
 
