@@ -11,7 +11,7 @@ const CANVAS_SIZE = 3000;
 const MIN_NODE_WIDTH = 126;
 const MIN_NODE_HEIGHT = 68;
 export const MAX_PLANNING_NODES = 2000;
-const MAX_EDGES = 5000;
+export const MAX_PLANNING_EDGES = 5000;
 
 export class PlanningDocumentError extends Error {
   constructor(message, code = 'invalid_document') {
@@ -139,8 +139,8 @@ export function normalizePlanningDocument(input, serviceCatalog, options = {}) {
   if (!Array.isArray(migrated.edges)) {
     throw new PlanningDocumentError('"edges" must be an array.');
   }
-  if (migrated.edges.length > MAX_EDGES) {
-    throw new PlanningDocumentError(`"edges" cannot contain more than ${MAX_EDGES} items.`);
+  if (migrated.edges.length > MAX_PLANNING_EDGES) {
+    throw new PlanningDocumentError(`"edges" cannot contain more than ${MAX_PLANNING_EDGES} items.`);
   }
 
   const nodeIds = new Set();
@@ -176,6 +176,8 @@ export function normalizePlanningDocument(input, serviceCatalog, options = {}) {
     const liveNodeId = optionalString(node.liveNodeId, 320);
     const profile = optionalString(node.profile, 160);
     const region = optionalString(node.region, 80);
+    const terraformAddress = optionalString(node.terraformAddress, 2048);
+    const terraformResourceType = optionalString(node.terraformResourceType, 80);
 
     return {
       id,
@@ -191,7 +193,9 @@ export function normalizePlanningDocument(input, serviceCatalog, options = {}) {
       ...(liveResourceType ? { liveResourceType } : {}),
       ...(liveNodeId ? { liveNodeId } : {}),
       ...(profile ? { profile } : {}),
-      ...(region ? { region } : {})
+      ...(region ? { region } : {}),
+      ...(terraformAddress ? { terraformAddress } : {}),
+      ...(terraformResourceType ? { terraformResourceType } : {})
     };
   });
 

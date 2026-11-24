@@ -26,6 +26,7 @@ import {
   loadPlanningDocumentFromLibrary,
   upsertPlanningDocument
 } from './planning/documentLibrary.mjs';
+import { readTerraformPlan } from './planning/terraformPlan.mjs';
 
 function browserStorage() {
   try {
@@ -75,6 +76,7 @@ export default function usePlanningDocument(serviceCatalog) {
   const [librarySummaries, setLibrarySummaries] = useState(initialLibrary.summaries || []);
   const [, setHistoryVersion] = useState(0);
   const latestDocumentRef = useRef(planningDocument);
+  const lastSavedDocumentIdRef = useRef(initialLoad.restored ? initialLoad.document.id : null);
   const lastSavedFingerprintRef = useRef(planningDocumentFingerprint(planningDocument));
   const lastSavedTopologyFingerprintRef = useRef(planningTopologyFingerprint(planningDocument));
   const historyRef = useRef(createPlanningHistory(planningDocument));
@@ -99,6 +101,7 @@ export default function usePlanningDocument(serviceCatalog) {
         libraryError = error;
         lastLibrarySaveSucceededRef.current = false;
       }
+      lastSavedDocumentIdRef.current = saved.id;
       lastSavedFingerprintRef.current = planningDocumentFingerprint(saved);
       lastSavedTopologyFingerprintRef.current = planningTopologyFingerprint(saved);
       setSaveIssue(libraryError ? 'Library save failed' : null);
@@ -261,29 +264,6 @@ export default function usePlanningDocument(serviceCatalog) {
     return true;
   }, [persistDocument, replaceAndSave]);
 
-  const importArchitecture = useCallback((text, fileName = 'selected file') => {
-    let imported;
-    try {
-      imported = deserializePlanningDocument(text, serviceCatalog);
-    } catch (error) {
-      setFeedback({ type: 'error', text: `Could not import ${fileName}: ${error.message}` });
-      return false;
-    }
-    const existing = librarySummaries.find((summary) => summary.id === imported.id);
-    if (existing && !window.confirm(`Importing will replace the saved architecture “${existing.name}”. Continue?`)) {
-      return false;
-    }
-    if (hasPlanningWork(latestDocumentRef.current)) {
-      const saved = persistDocument(latestDocumentRef.current, false);
-      if (!saved || !lastLibrarySaveSucceededRef.current) {
-        setFeedback({ type: 'error', text: 'The current architecture could not be added to the library. Export it before importing another architecture.' });
-        return false;
-      }
-    }
-    replaceAndSave(imported, `Imported “${imported.name}” and saved it locally.`);
-    return true;
-  }, [librarySummaries, persistDocument, replaceAndSave, serviceCatalog]);
-
   const openArchitecture = useCallback((documentId) => {
     if (documentId === latestDocumentRef.current.id) return true;
     if (hasPlanningWork(latestDocumentRef.current)) {
@@ -340,16 +320,17 @@ export default function usePlanningDocument(serviceCatalog) {
     }
   }, [librarySummaries, replaceAndSave, serviceCatalog]);
 
-  const createArchitectureFromGraph = useCallback(({ nodes, edges }, name) => {
+  const createArchitectureFromGraph = useCallback(({ nodes, edges }, name, successMessage) => {
     const current = latestDocumentRef.current;
     const { document: libraryCopy } = loadPlanningDocumentFromLibrary(storageRef.current, current.id, serviceCatalog);
     const currentFingerprint = planningDocumentFingerprint(current);
+    const preserveCurrent = libraryCopy || lastSavedDocumentIdRef.current === current.id || hasPlanningWork(current);
     const currentNeedsSave = !libraryCopy || currentFingerprint !== planningDocumentFingerprint(libraryCopy)
       || currentFingerprint !== lastSavedFingerprintRef.current;
-    if (currentNeedsSave) {
+    if (preserveCurrent && currentNeedsSave) {
       const saved = persistDocument(current, false, true);
       if (!saved || !lastLibrarySaveSucceededRef.current) {
-        throw new Error('Could not save the current architecture to the library. Open Planning to export it as JSON.');
+        throw new Error('Could not save the current architecture to the library. Export it from Planning as JSON.');
       }
     }
 
@@ -357,13 +338,48 @@ export default function usePlanningDocument(serviceCatalog) {
     const { document, summaries } = upsertPlanningDocument(storageRef.current, candidate, serviceCatalog, {
       activateNew: true
     });
+    lastSavedDocumentIdRef.current = document.id;
     lastSavedFingerprintRef.current = planningDocumentFingerprint(document);
     lastSavedTopologyFingerprintRef.current = planningTopologyFingerprint(document);
     lastLibrarySaveSucceededRef.current = true;
     setSaveIssue(null);
     setLibrarySummaries(summaries);
-    openDocument(document, document.updatedAt, { type: 'success', text: `Created “${document.name}” and saved it locally.` });
+    openDocument(document, document.updatedAt, { type: 'success', text: successMessage || `Created “${document.name}” and saved it locally.` });
   }, [openDocument, persistDocument, serviceCatalog]);
+
+  const importArchitecture = useCallback((text, fileName = 'selected file') => {
+    let imported;
+    try {
+      const terraform = readTerraformPlan(text, fileName);
+      if (terraform) {
+        const { name, nodes, edges, skippedResources, incomplete } = terraform;
+        const message = [
+          `Imported ${nodes.length} ${nodes.length === 1 ? 'service' : 'services'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'} as “${name}”.`,
+          skippedResources ? `Skipped ${skippedResources} unsupported AWS ${skippedResources === 1 ? 'resource' : 'resources'}.` : '',
+          incomplete ? 'Terraform marked this plan incomplete.' : ''
+        ].filter(Boolean).join(' ');
+        createArchitectureFromGraph(terraform, name, message);
+        return true;
+      }
+      imported = deserializePlanningDocument(text, serviceCatalog);
+    } catch (error) {
+      setFeedback({ type: 'error', text: `Could not import ${fileName}: ${error.message}` });
+      return false;
+    }
+    const existing = librarySummaries.find((summary) => summary.id === imported.id);
+    if (existing && !window.confirm(`Importing will replace the saved architecture “${existing.name}”. Continue?`)) {
+      return false;
+    }
+    if (hasPlanningWork(latestDocumentRef.current)) {
+      const saved = persistDocument(latestDocumentRef.current, false);
+      if (!saved || !lastLibrarySaveSucceededRef.current) {
+        setFeedback({ type: 'error', text: 'The current architecture could not be added to the library. Export it before importing another architecture.' });
+        return false;
+      }
+    }
+    replaceAndSave(imported, `Imported “${imported.name}” and saved it locally.`);
+    return true;
+  }, [createArchitectureFromGraph, librarySummaries, persistDocument, replaceAndSave, serviceCatalog]);
 
   const exportArchitecture = useCallback(() => {
     const current = latestDocumentRef.current;

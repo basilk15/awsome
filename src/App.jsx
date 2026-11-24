@@ -1233,7 +1233,11 @@ function PlanningWorkspace({ planning }) {
           <p>{selectedServiceDetails?.[0] || 'AWS managed service selected for this architecture.'}</p>
           <div className={styles.realWorldUse}><span>Common use</span><p>{selectedServiceDetails?.[1] || 'Use this service as part of your planned AWS workload.'}</p></div>
           <dl>
-            {selectedNode.provenance ? <><div><dt>Provenance</dt><dd>Imported from live topology</dd></div><div><dt>Original label</dt><dd>{selectedNode.originalResourceLabel}</dd></div><div><dt>Resource ID</dt><dd>{selectedNode.resourceId}</dd></div><div><dt>Live resource type</dt><dd>{selectedNode.liveResourceType}</dd></div><div><dt>Profile</dt><dd>{selectedNode.profile}</dd></div><div><dt>Region</dt><dd>{selectedNode.region}</dd></div></> : null}
+            {selectedNode.terraformAddress ? <>
+              <div><dt>Provenance</dt><dd>Imported from a Terraform plan</dd></div>
+              <div><dt>Terraform address</dt><dd>{selectedNode.terraformAddress}</dd></div>
+              <div><dt>Terraform resource type</dt><dd>{selectedNode.terraformResourceType}</dd></div>
+            </> : selectedNode.provenance ? <><div><dt>Provenance</dt><dd>Imported from live topology</dd></div><div><dt>Original label</dt><dd>{selectedNode.originalResourceLabel}</dd></div><div><dt>Resource ID</dt><dd>{selectedNode.resourceId}</dd></div><div><dt>Live resource type</dt><dd>{selectedNode.liveResourceType}</dd></div><div><dt>Profile</dt><dd>{selectedNode.profile}</dd></div><div><dt>Region</dt><dd>{selectedNode.region}</dd></div></> : null}
             <div><dt>Category</dt><dd>{selectedNodeService.category}</dd></div>
             <div><dt>Connections</dt><dd>{edges.filter((edge) => edge.source === selectedNode.id || edge.target === selectedNode.id).length}</dd></div>
           </dl>

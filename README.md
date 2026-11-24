@@ -40,6 +40,21 @@ To make a plan from a live or saved scan, select **Plan from full scan**. This i
 
 Invalid or unsupported JSON imports are rejected with an explanation. Importing a document whose ID already exists asks before replacing it. Deleting a saved architecture requires confirmation.
 
+### Import a Terraform plan
+
+In your Terraform project, save a plan and export its JSON:
+
+```bash
+terraform plan -out=topology.tfplan
+terraform show -json topology.tfplan > topology.tfplan.json
+```
+
+In Planning mode, use the JSON import control to open `topology.tfplan.json`. Awsome opens it as a new local architecture and keeps your previous plan in the library. Select an imported service to see its Terraform address and resource type. Those fields are retained in awsome JSON exports.
+
+The import uses the proposed state in Terraform plan JSON format 1.x. It supports common AWS network, compute, storage, database, messaging, and load-balancing resources from the HashiCorp AWS provider, including resources inside modules. Relationships between known planned IDs include VPC and subnet membership, security groups, standalone routes and route table associations, and load balancer listeners and targets. Edges marked **Terraform reference** show dependencies from configuration expressions whose planned values are unknown. An expression can reference several resources while evaluating to an ID elsewhere. Links through variables, module outputs, external resources, or ambiguous references may be absent. The importer reports unsupported AWS resource counts and plans marked incomplete.
+
+Awsome reads the file locally and stores service addresses, types, and derived relationships. Terraform JSON may contain sensitive values, so protect the original file. The import omits raw attribute values, outputs, and sensitive relationship fields from the architecture.
+
 ## AWS profiles and permissions
 
 awsome lists profile names from the shared AWS config and credentials files. By default, it reads `~/.aws/config` and `~/.aws/credentials`; set `AWS_CONFIG_FILE` or `AWS_SHARED_CREDENTIALS_FILE` to use different files. The selected profile is passed to the AWS SDK for Rust. Live scans require credentials and read access for the selected profile. Planning mode and previously saved scans do not require AWS access.
