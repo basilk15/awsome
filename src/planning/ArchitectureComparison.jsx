@@ -1,6 +1,12 @@
 import { useId, useLayoutEffect, useMemo, useState } from 'react';
 import styles from '../../styles/Home.module.css';
 import { compareArchitectures } from './architectureComparison.mjs';
+import { summaryFromDocument } from './documentLibrary.mjs';
+
+function collapseLabelWhitespace(label) {
+  // Native option text collapses ASCII whitespace.
+  return label.replace(/[ \t\n\f\r]+/g, ' ').trim();
+}
 
 function getPlanLabels(plans) {
   const nameCounts = new Map();
@@ -8,15 +14,17 @@ function getPlanLabels(plans) {
   const labels = new Map();
 
   for (const { name } of plans) {
-    nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+    const key = collapseLabelWhitespace(name);
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
   }
 
   for (const { id, name, nodeCount, edgeCount, updatedAt } of plans) {
-    let label = name;
-    if (nameCounts.get(name) > 1) {
+    const displayName = collapseLabelWhitespace(name);
+    let label = displayName;
+    if (nameCounts.get(displayName) > 1) {
       const services = `${nodeCount} service${nodeCount === 1 ? '' : 's'}`;
       const connections = `${edgeCount} connection${edgeCount === 1 ? '' : 's'}`;
-      label = `${name} · ${services} · ${connections} · Edited ${new Date(updatedAt).toLocaleString()}`;
+      label = collapseLabelWhitespace(`${displayName} · ${services} · ${connections} · Edited ${new Date(updatedAt).toLocaleString()}`);
     }
     labels.set(id, label);
     labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
@@ -49,12 +57,11 @@ export default function ArchitectureComparison({ dialogRef, current, summaries, 
   const titleId = useId();
   const descriptionId = useId();
   const [selection, setSelection] = useState(null);
-  const options = summaries.filter(({ id }) => id !== current.id);
+  const [readSummaries, setReadSummaries] = useState(() => new Map());
+  const options = summaries.filter(({ id }) => id !== current.id)
+    .map((summary) => readSummaries.get(summary.id) ?? summary);
   const labels = getPlanLabels([...options, {
-    id: current.id,
-    name: current.name,
-    nodeCount: current.nodes.length,
-    edgeCount: current.edges.length,
+    ...summaryFromDocument(current),
     updatedAt: summaries.find(({ id }) => id === current.id)?.updatedAt ?? current.updatedAt
   }]);
   const baseline = selection?.document;
@@ -85,6 +92,10 @@ export default function ArchitectureComparison({ dialogRef, current, summaries, 
       return;
     }
     const loaded = readSavedArchitecture(option.id);
+    if (loaded.document) {
+      const summary = summaryFromDocument(loaded.document);
+      setReadSummaries((previous) => new Map(previous).set(summary.id, summary));
+    }
     const error = loaded.error
       ? `Could not read “${option.name}”.`
       : `“${option.name}” is no longer available in the architecture library.`;
@@ -106,7 +117,7 @@ export default function ArchitectureComparison({ dialogRef, current, summaries, 
       </select>
     </label> : <p className={styles.comparisonStatus}>No other saved architectures to compare.</p>}
     <dl className={styles.comparisonPlans}>
-      {baseline ? <div><dt>Baseline</dt><dd>{labels.get(selection.id) ?? baseline.name}</dd></div> : null}
+      {baseline ? <div><dt>Baseline</dt><dd>{labels.get(selection.id) ?? collapseLabelWhitespace(baseline.name)}</dd></div> : null}
       <div><dt>Current</dt><dd>{labels.get(current.id)}</dd></div>
     </dl>
     {selection?.error ? <div className={styles.comparisonError} role="alert">{selection.error} Select another saved architecture.</div> : null}
