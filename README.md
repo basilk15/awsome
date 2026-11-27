@@ -24,6 +24,14 @@ Relationships are derived from the returned configuration inventory; they do not
 
 If an inventory call fails, awsome keeps the resources it did discover and marks the affected inventory as incomplete. Successful regions remain available when another region fails. Comparisons omit scopes that were incomplete in either scan, so missing inventory is not counted as a confirmed deletion. A region whose primary inventory calls all fail is marked failed. If every selected region fails, the scan returns an error instead of an empty graph. After a failed refresh, the last successful graph remains visible with a previous-snapshot warning.
 
+### Topology analysis
+
+Choose **Analyze** from a live or offline scan to work with its full inventory.
+
+- **Trace a path** finds a shortest chain of recorded relationships between two resources. Enable **Follow edge direction only** to constrain the search. **Open path in planner** imports the resources and edges along that chain.
+- **Simulate removal** shows which resources lose their connection to a chosen anchor when one resource is omitted. It considers alternate connections in either direction and excludes resources already disconnected from the anchor. The result describes configuration relationships and does not predict traffic or outages.
+- **Review plan coverage** compares the open architecture with the scan using imported resource identities, profile, and region. It lists scanned resources outside the plan, imported resources unseen in this scan, and manually designed services.
+
 ### Saved scans
 
 Successful scans are saved on the device. **Open saved scan** works offline and keeps the profile and regions set for your next AWS scan. **Compare with canvas** compares two different scans that used the same profile and region set. Changes are reported from the earlier scan to the later scan. When you scan the same profile and region set again, awsome automatically compares the result with the most recent saved scan for that source.
@@ -49,11 +57,15 @@ terraform plan -out=topology.tfplan
 terraform show -json topology.tfplan > topology.tfplan.json
 ```
 
-In Planning mode, use the JSON import control to open `topology.tfplan.json`. Awsome opens it as a new local architecture and keeps your previous plan in the library. Select an imported service to see its Terraform address and resource type. Those fields are retained in awsome JSON exports.
+In Planning mode, choose **File → Import JSON** and open `topology.tfplan.json`. The review lists counts and addresses for managed HashiCorp AWS resources, starting with deletions and replacements, followed by updates and creations. Both Terraform replacement orders count as replacements. The review includes resource types the planner cannot draw and excludes reads, no-ops, data resources, and changes from other providers.
+
+Choose **Export change summary** to download `awsome-terraform-change-summary.json` while keeping the review open. It contains the summary format version, the incomplete flag, and the resource addresses in each action group. You can export even when there are no changes or no supported services to import. Resource addresses can include project-specific names.
+
+When the proposed topology has supported services, choose **Import architecture** to save it as a new local architecture and keep your previous plan in the library. You can close a review without importing, including a deletion-only plan with an empty proposed topology. Select an imported service to see its Terraform address and resource type. Those fields are retained in awsome JSON exports.
 
 The import uses the proposed state in Terraform plan JSON format 1.x. It supports common AWS network, compute, storage, database, messaging, and load-balancing resources from the HashiCorp AWS provider, including resources inside modules. Relationships between known planned IDs include VPC and subnet membership, security groups, standalone routes and route table associations, and load balancer listeners and targets. Edges marked **Terraform reference** show dependencies from configuration expressions whose planned values are unknown. An expression can reference several resources while evaluating to an ID elsewhere. Links through variables, module outputs, external resources, or ambiguous references may be absent. The importer reports unsupported AWS resource counts and plans marked incomplete.
 
-Awsome reads the file locally and stores service addresses, types, and derived relationships. Terraform JSON may contain sensitive values, so protect the original file. The import omits raw attribute values, outputs, and sensitive relationship fields from the architecture.
+Awsome reads the file locally and keeps the change review in memory until you close or import it. The saved architecture contains service addresses, types, and derived relationships. Terraform JSON may contain sensitive values, so protect the original file. The review and saved architecture omit raw attribute values and outputs, and the importer excludes sensitive relationship fields when drawing connections.
 
 ## AWS profiles and permissions
 

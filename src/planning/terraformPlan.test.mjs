@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPlanningDocument, deserializePlanningDocument, serializePlanningDocument } from '../planningDocument.mjs';
-import { readTerraformPlan } from './terraformPlan.mjs';
+import { readTerraformPlan, serializeTerraformChangeSummary } from './terraformPlan.mjs';
 
 const AWS = 'registry.terraform.io/hashicorp/aws';
 
@@ -16,6 +16,14 @@ function plan(resources, extra = {}) {
 
 function read(input, fileName = 'staging.tfplan.json') {
   return readTerraformPlan(JSON.stringify(input), fileName);
+}
+
+function change(address, actions, extra = {}) {
+  return {
+    address, mode: 'managed', provider_name: AWS,
+    change: { actions, before: { password: 'secret-before' }, after: { password: 'secret-after' } },
+    ...extra
+  };
 }
 
 function relationships({ nodes, edges }) {
@@ -201,12 +209,111 @@ test('imports common routing and load balancer relationships without extra resou
   ].sort());
 });
 
-test('rejects incompatible, errored and empty plans while preserving other JSON import formats', () => {
+test('reviews managed HashiCorp AWS action metadata independently of the graph', () => {
+  const indexed = 'module.zone["blue.east"].aws_instance.worker[0]';
+  const result = read(plan([resource('aws_vpc.main')], {
+    resource_changes: [
+      change('aws_vpc.main', ['create']),
+      change('aws_iam_policy.unsupported', ['update']),
+      change('aws_instance.before_destroy', ['create', 'delete']),
+      change(indexed, ['delete', 'create']),
+      change('aws_subnet.deleted', ['delete']),
+      change('aws_subnet.deleted', ['delete'], { deposed: 'old-object' }),
+      change('aws_s3_bucket.unchanged', ['no-op']),
+      change('aws_s3_bucket.read', ['read']),
+      change('aws_s3_bucket.data', ['delete'], { mode: 'data' }),
+      change('aws_s3_bucket.foreign', ['delete'], { provider_name: 'registry.terraform.io/other/aws' }),
+      change('aws_s3_bucket.legacy', ['create'], { provider_name: 'aws' }),
+      change('aws_s3_bucket.future', ['forget']),
+      change('aws_s3_bucket.malformed', 'delete'),
+      change('aws_s3_bucket.malformed', ['delete,create']),
+      change('', ['delete']),
+      null
+    ],
+    resource_drift: [change('aws_vpc.drifted', ['delete'])],
+    output_changes: { secret: { after: 'secret-output' } }
+  }));
+
+  assert.deepEqual(Object.entries(result.changes), [
+    ['delete', ['aws_subnet.deleted', 'aws_subnet.deleted']],
+    ['replace', ['aws_instance.before_destroy', indexed]],
+    ['update', ['aws_iam_policy.unsupported']],
+    ['create', ['aws_s3_bucket.legacy', 'aws_vpc.main']]
+  ]);
+  assert.deepEqual(result.nodes.map(node => node.terraformAddress), ['aws_vpc.main']);
+  assert.doesNotMatch(JSON.stringify(result), /secret-|old-object|drifted/);
+});
+
+test('reviews deletion-only and unsupported-only plans without a graph', () => {
+  const deleted = read(plan([], {
+    planned_values: {},
+    resource_changes: [change('aws_instance.removed', ['delete'])]
+  }));
+  assert.deepEqual(deleted.changes.delete, ['aws_instance.removed']);
+  assert.deepEqual(deleted.nodes, []);
+  assert.deepEqual(deleted.edges, []);
+
+  const unsupported = read(plan([resource('aws_iam_policy.new')], {
+    resource_changes: [change('aws_iam_policy.new', ['create'])]
+  }));
+  assert.deepEqual(unsupported.changes.create, ['aws_iam_policy.new']);
+  assert.deepEqual(unsupported.nodes, []);
+  assert.equal(unsupported.skippedResources, 1);
+});
+
+test('serializes only the ordered change summary from a Terraform review', () => {
+  const indexed = 'module.zone["blue.east"].aws_instance.worker[0]';
+  const review = read(plan([
+    resource('aws_vpc.main', { id: 'vpc-private' }),
+    resource('aws_subnet.new', { vpc_id: 'vpc-private' })
+  ], {
+    complete: false,
+    resource_changes: [
+      change('aws_subnet.new', ['create']),
+      change('aws_iam_policy.unsupported', ['update']),
+      change(indexed, ['delete', 'create']),
+      change('aws_subnet.old', ['delete']),
+      change('aws_subnet.old', ['delete'], { deposed: 'old-object' })
+    ],
+    output_changes: { secret: { after: 'secret-output' } }
+  }));
+
+  assert.equal(review.nodes.length, 2);
+  assert.equal(review.edges.length, 1);
+  const summary = JSON.parse(serializeTerraformChangeSummary({
+    ...review,
+    fileName: 'private.tfplan.json',
+    changes: { ...review.changes, drift: ['aws_subnet.drifted'] }
+  }));
+  assert.deepEqual(Object.keys(summary), ['version', 'incomplete', 'changes']);
+  assert.equal(summary.version, 1);
+  assert.equal(summary.incomplete, true);
+  assert.deepEqual(Object.entries(summary.changes), [
+    ['delete', ['aws_subnet.old', 'aws_subnet.old']],
+    ['replace', [indexed]],
+    ['update', ['aws_iam_policy.unsupported']],
+    ['create', ['aws_subnet.new']]
+  ]);
+});
+
+test('serializes all four empty action groups from a review without a topology', () => {
+  const summary = JSON.parse(serializeTerraformChangeSummary(read(plan([]))));
+  assert.deepEqual(summary, {
+    version: 1,
+    incomplete: false,
+    changes: { delete: [], replace: [], update: [], create: [] }
+  });
+});
+
+test('supports empty changes and preserves format, failed-plan and address validation', () => {
   assert.equal(read({ schema: 'graphivo/planning-document', version: 1 }), null);
   assert.throws(() => read({ ...plan([]), format_version: '2.0' }), /format version/);
   assert.throws(() => read({ ...plan([]), errored: true }), /failed/);
   assert.throws(() => read({ format_version: '1.0', terraform_version: '1.0.0', values: {} }), /saved Terraform plan/);
-  assert.throws(() => read(plan([])), /no supported managed AWS resources/i);
+  assert.throws(() => read(plan([resource('aws_vpc.main', {}, { name: 'mismatch' })])), /invalid Terraform address/);
+  const empty = read(plan([]));
+  assert.deepEqual(empty.changes, { delete: [], replace: [], update: [], create: [] });
+  assert.deepEqual(empty.nodes, []);
   assert.equal(readTerraformPlan(`\ufeff${JSON.stringify(plan([resource('aws_vpc.main')]))}`, '.json').name, 'Terraform plan');
 });
 

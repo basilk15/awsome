@@ -67,6 +67,24 @@ const RESOURCE_REFERENCE = /^([^.]+\.[^.[\]]+)(\[(?:\d+|"(?:[^"\\]|\\.)*")\])?(?
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const array = value => Array.isArray(value) ? value : [];
+const isManagedAws = resource => resource?.mode === 'managed' && [AWS_PROVIDER, 'aws'].includes(resource.provider_name);
+
+function collectChanges(resourceChanges) {
+  const groups = { delete: [], replace: [], update: [], create: [] };
+  for (const entry of array(resourceChanges)) {
+    if (!isManagedAws(entry) || typeof entry.address !== 'string' || !entry.address.trim()) continue;
+    const actions = array(entry.change?.actions);
+    const [first, second] = actions;
+    if (actions.length === 2 && ((first === 'delete' && second === 'create')
+      || (first === 'create' && second === 'delete'))) {
+      groups.replace.push(entry.address);
+    } else if (actions.length === 1 && (first === 'delete' || first === 'update' || first === 'create')) {
+      groups[first].push(entry.address);
+    }
+  }
+  for (const addresses of Object.values(groups)) addresses.sort((left, right) => left.localeCompare(right));
+  return groups;
+}
 
 function expressionReferences(expression) {
   return isObject(expression) && !Object.hasOwn(expression, 'constant_value') ? array(expression.references) : [];
@@ -106,7 +124,7 @@ function collectEntries(root, configuration) {
     const prefix = address ? address + '.' : '';
     const expressions = new Map(array(configuration?.resources).map(resource => [resource?.address, resource?.expressions]));
     for (const resource of array(module.resources)) {
-      if (resource?.mode !== 'managed' || ![AWS_PROVIDER, 'aws'].includes(resource.provider_name)) continue;
+      if (!isManagedAws(resource)) continue;
       const { address: resourceAddress, name } = resource;
       if (typeof resourceAddress !== 'string' || !resourceAddress.startsWith(prefix)
         || typeof resource.type !== 'string' || typeof name !== 'string' || !name.trim()) {
@@ -356,6 +374,19 @@ export function readTerraformPlan(text, fileName = '') {
   const root = plan.planned_values.root_module;
   const entries = isObject(root) ? collectEntries(root, plan.configuration?.root_module) : [];
   const graph = buildGraph(entries);
-  if (!graph.nodes.length) throw new Error('The Terraform plan has no supported managed AWS resources to import.');
-  return { ...graph, name: planName(fileName, plan.timestamp), incomplete: plan.complete === false };
+  return {
+    ...graph,
+    changes: collectChanges(plan.resource_changes),
+    name: planName(fileName, plan.timestamp),
+    incomplete: plan.complete === false
+  };
+}
+
+export function serializeTerraformChangeSummary({ incomplete, changes }) {
+  const { delete: deletions, replace, update, create } = changes;
+  return JSON.stringify({
+    version: 1,
+    incomplete,
+    changes: { delete: deletions, replace, update, create }
+  }, null, 2);
 }

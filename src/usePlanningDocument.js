@@ -74,6 +74,7 @@ export default function usePlanningDocument(serviceCatalog) {
   const [lastSavedAt, setLastSavedAt] = useState(initialLoad.restored ? initialLoad.document.updatedAt : null);
   const [saveIssue, setSaveIssue] = useState(null);
   const [librarySummaries, setLibrarySummaries] = useState(initialLibrary.summaries || []);
+  const [terraformReview, setTerraformReview] = useState(null);
   const [, setHistoryVersion] = useState(0);
   const latestDocumentRef = useRef(planningDocument);
   const lastSavedDocumentIdRef = useRef(initialLoad.restored ? initialLoad.document.id : null);
@@ -320,7 +321,7 @@ export default function usePlanningDocument(serviceCatalog) {
     }
   }, [librarySummaries, replaceAndSave, serviceCatalog]);
 
-  const createArchitectureFromGraph = useCallback(({ nodes, edges }, name, successMessage) => {
+  const createArchitectureFromGraph = useCallback(({ nodes, edges, viewport }, name, successMessage) => {
     const current = latestDocumentRef.current;
     const { document: libraryCopy } = loadPlanningDocumentFromLibrary(storageRef.current, current.id, serviceCatalog);
     const currentFingerprint = planningDocumentFingerprint(current);
@@ -334,7 +335,8 @@ export default function usePlanningDocument(serviceCatalog) {
       }
     }
 
-    const candidate = { ...createPlanningDocument({ name: name.slice(0, 120).trimEnd() }), nodes, edges };
+    const candidate = createPlanningDocument({ name: name.slice(0, 120).trimEnd() });
+    Object.assign(candidate, { nodes, edges, viewport: viewport ?? candidate.viewport });
     const { document, summaries } = upsertPlanningDocument(storageRef.current, candidate, serviceCatalog, {
       activateNew: true
     });
@@ -347,18 +349,28 @@ export default function usePlanningDocument(serviceCatalog) {
     openDocument(document, document.updatedAt, { type: 'success', text: successMessage || `Created “${document.name}” and saved it locally.` });
   }, [openDocument, persistDocument, serviceCatalog]);
 
+  const duplicateArchitecture = useCallback(() => {
+    const source = latestDocumentRef.current;
+    const existingNames = new Set(librarySummaries.map(item => item.name));
+    let name;
+    for (let number = 1; ; number++) {
+      const suffix = number === 1 ? ' (copy)' : ` (copy ${number})`;
+      name = source.name.slice(0, 120 - suffix.length).trimEnd() + suffix;
+      if (!existingNames.has(name)) break;
+    }
+    try {
+      createArchitectureFromGraph(source, name);
+    } catch (error) {
+      setFeedback({ type: 'error', text: `Could not duplicate the architecture: ${error.message}` });
+    }
+  }, [createArchitectureFromGraph, librarySummaries]);
+
   const importArchitecture = useCallback((text, fileName = 'selected file') => {
     let imported;
     try {
       const terraform = readTerraformPlan(text, fileName);
       if (terraform) {
-        const { name, nodes, edges, skippedResources, incomplete } = terraform;
-        const message = [
-          `Imported ${nodes.length} ${nodes.length === 1 ? 'service' : 'services'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'} as “${name}”.`,
-          skippedResources ? `Skipped ${skippedResources} unsupported AWS ${skippedResources === 1 ? 'resource' : 'resources'}.` : '',
-          incomplete ? 'Terraform marked this plan incomplete.' : ''
-        ].filter(Boolean).join(' ');
-        createArchitectureFromGraph(terraform, name, message);
+        setTerraformReview(terraform);
         return true;
       }
       imported = deserializePlanningDocument(text, serviceCatalog);
@@ -379,7 +391,23 @@ export default function usePlanningDocument(serviceCatalog) {
     }
     replaceAndSave(imported, `Imported “${imported.name}” and saved it locally.`);
     return true;
-  }, [createArchitectureFromGraph, librarySummaries, persistDocument, replaceAndSave, serviceCatalog]);
+  }, [librarySummaries, persistDocument, replaceAndSave, serviceCatalog]);
+
+  const finishTerraformReview = useCallback((importGraph) => {
+    setTerraformReview(null);
+    if (!importGraph || !terraformReview?.nodes.length) return;
+    const { name, nodes, edges, skippedResources, incomplete } = terraformReview;
+    const message = [
+      `Imported ${nodes.length} ${nodes.length === 1 ? 'service' : 'services'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'} as “${name}”.`,
+      skippedResources ? `Skipped ${skippedResources} unsupported AWS ${skippedResources === 1 ? 'resource' : 'resources'}.` : '',
+      incomplete ? 'Terraform marked this plan incomplete.' : ''
+    ].filter(Boolean).join(' ');
+    try {
+      createArchitectureFromGraph({ nodes, edges }, name, message);
+    } catch (error) {
+      setFeedback({ type: 'error', text: `Could not import ${name}: ${error.message}` });
+    }
+  }, [createArchitectureFromGraph, terraformReview]);
 
   const exportArchitecture = useCallback(() => {
     const current = latestDocumentRef.current;
@@ -418,7 +446,10 @@ export default function usePlanningDocument(serviceCatalog) {
     setCanvasPan,
     renameDocument,
     createNewArchitecture,
+    duplicateArchitecture,
     importArchitecture,
+    terraformReview,
+    finishTerraformReview,
     exportArchitecture,
     librarySummaries,
     openArchitecture,

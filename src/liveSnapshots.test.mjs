@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as snapshots from './liveSnapshots.mjs';
 import { buildSnapshotComparison, compareTopologySnapshots, savedScanComparisonIssue, snapshotChangeCount, snapshotUncertainCount } from './liveSnapshots.mjs';
 
 test('saved scan comparison requires a different scan from the same profile and regions', () => {
@@ -91,4 +92,23 @@ test('object key order does not count as a resource change', () => {
   const before = { nodes: [{ data: { id: 'vpc-1', type: 'vpc', details: { a: '1', b: '2' } } }] };
   const after = { nodes: [{ data: { details: { b: '2', a: '1' }, type: 'vpc', id: 'vpc-1' } }] };
   assert.equal(compareTopologySnapshots(before, after).nodes.changed.length, 0);
+});
+
+test('shows exact changed fields while preserving missing, null, false and zero values', () => {
+  const before = { id: 'vpc-1', label: 'Old', details: { Config: { a: 1, b: 2 }, Enabled: false, Limit: null, Removed: true } };
+  const after = { id: 'vpc-1', label: 'New', details: { Config: { b: 2, a: 1 }, Enabled: true, Limit: 0, Added: '' } };
+  assert.deepEqual(snapshots.snapshotChangeFields(before, after).map(({ label, before, after }) => [label, before, after]), [
+    ['Name', 'Old', 'New'],
+    ['Added', undefined, ''],
+    ['Enabled', false, true],
+    ['Limit', null, 0],
+    ['Removed', true, undefined]
+  ]);
+});
+
+test('exposes relationship endpoint changes using readable field labels', () => {
+  assert.deepEqual(snapshots.snapshotChangeFields(
+    { id: 'edge-1', source: 'vpc-1', target: 'subnet-1' },
+    { id: 'edge-1', source: 'vpc-1', target: 'subnet-2' }
+  ).map(({ label, before, after }) => [label, before, after]), [['To', 'subnet-1', 'subnet-2']]);
 });
