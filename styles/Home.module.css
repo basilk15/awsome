@@ -388,6 +388,27 @@
 .dialogActions { display: flex; justify-content: flex-end; gap: 8px; }
 .dialogActions .secondaryBtn { min-height: 38px; margin-top: 12px; }
 
+.architectureComparison.importDialog { width: min(620px, calc(100% - 44px)); overflow-wrap: anywhere; }
+.architectureComparison[open] { display: flex; flex-direction: column; }
+.architectureComparison > :not(.comparisonResults) { flex: none; }
+.architectureComparison h2 { margin-top: 0; }
+.comparisonSelect { display: grid; gap: 5px; margin: 14px 0; color: var(--ink); font-size: 14px; font-weight: 650; }
+.comparisonSelect select { width: 100%; min-width: 0; min-height: 38px; padding: 6px 9px; color: var(--ink); border: 1px solid var(--control-line); border-radius: 6px; background: var(--panel); font: inherit; font-weight: 400; }
+.comparisonSelect select:focus-visible, .comparisonResults:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.comparisonPlans { display: grid; gap: 4px; margin: 12px 0; font-size: 14px; }
+.comparisonPlans > div, .comparisonItemValues > div { display: grid; grid-template-columns: 4.25em minmax(0, 1fr); gap: 8px; }
+.comparisonPlans dt, .comparisonItemValues dt { color: var(--muted); font-weight: 650; }
+.comparisonPlans dd, .comparisonItemValues dd { margin: 0; color: var(--ink); }
+.architectureComparison > .comparisonStatus { margin-top: 10px; }
+.comparisonError { margin-top: 10px; color: var(--danger-ink); font-size: 14px; }
+.comparisonResults { min-height: 4rem; max-height: min(42vh, 24rem); margin-top: 8px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
+.comparisonGroup { padding: 10px 12px; color: var(--ink); font-size: 14px; }
+.comparisonGroup + .comparisonGroup { border-top: 1px solid var(--line); }
+.comparisonGroup h3 { margin: 0; font-size: 14px; }
+.comparisonGroup h3 span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.comparisonGroup ul { display: grid; gap: 6px; margin: 7px 0 0; padding-left: 20px; }
+.comparisonItemValues { display: grid; gap: 2px; margin: 0; }
+
 .terraformReview.importDialog { width: min(590px, calc(100% - 44px)); }
 .terraformReview h2 { margin-top: 0; }
 .terraformChanges { max-height: min(40vh, 26rem); margin: 14px 0; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }

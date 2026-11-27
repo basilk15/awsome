@@ -265,6 +265,10 @@ export default function usePlanningDocument(serviceCatalog) {
     return true;
   }, [persistDocument, replaceAndSave]);
 
+  const readSavedArchitecture = useCallback((documentId) => (
+    loadPlanningDocumentFromLibrary(storageRef.current, documentId, serviceCatalog)
+  ), [serviceCatalog]);
+
   const openArchitecture = useCallback((documentId) => {
     if (documentId === latestDocumentRef.current.id) return true;
     if (hasPlanningWork(latestDocumentRef.current)) {
@@ -455,6 +459,7 @@ export default function usePlanningDocument(serviceCatalog) {
     finishTerraformReview,
     exportArchitecture,
     librarySummaries,
+    readSavedArchitecture,
     openArchitecture,
     deleteArchitecture,
     createArchitectureFromGraph,

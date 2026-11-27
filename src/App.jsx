@@ -6,6 +6,7 @@ import { inventoryResourceId, resourceInventoryCsv, resourceInventoryRows } from
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { buildSnapshotComparison, savedScanComparisonIssue } from './liveSnapshots.mjs';
 import SnapshotComparison from './SnapshotComparison.jsx';
+import ArchitectureComparison from './planning/ArchitectureComparison.jsx';
 import { graphRegions, liveNodeRegion, normaliseScanRegions, sameScanSource } from './liveRegions.mjs';
 import styles from '../styles/Home.module.css';
 import ec2Icon from 'aws-icons/icons/architecture-service/AmazonEC2.svg';
@@ -548,6 +549,7 @@ function PlanningWorkspace({ planning }) {
     finishTerraformReview,
     exportArchitecture,
     librarySummaries,
+    readSavedArchitecture,
     openArchitecture,
     deleteArchitecture,
     undo,
@@ -566,6 +568,8 @@ function PlanningWorkspace({ planning }) {
   const [isCanvasPanning, setIsCanvasPanning] = useState(false);
   const [removalHover, setRemovalHover] = useState(false);
   const [nameDraft, setNameDraft] = useState(planningDocument.name);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
+  const comparisonDialogRef = useRef(null);
   const cancelNameBlurRef = useRef(false);
   const canvasRef = useRef(null);
   const canvasZoomRef = useRef(canvasZoom);
@@ -797,6 +801,7 @@ function PlanningWorkspace({ planning }) {
   useEffect(() => {
     const handleShortcut = (event) => {
       if (terraformReview) return;
+      if (comparisonDialogRef.current?.open) return;
       const direction = getKeyboardZoomDirection(event);
       if (direction) {
         event.preventDefault();
@@ -1161,6 +1166,7 @@ function PlanningWorkspace({ planning }) {
   useEffect(() => {
     const handlePlanningShortcut = (event) => {
       if (terraformReview) return;
+      if (comparisonDialogRef.current?.open) return;
       const target = event.target;
       const isDocumentMenuItem = target instanceof HTMLElement && target.closest('[role="menuitemradio"]');
       const isUndoRedoShortcut = (event.ctrlKey || event.metaKey)
@@ -1198,6 +1204,17 @@ function PlanningWorkspace({ planning }) {
   }, [canvasTool, redo, removeNode, selectedId, terraformReview, undo]);
 
   return <>
+    {comparisonOpen ? <ArchitectureComparison
+      dialogRef={comparisonDialogRef}
+      current={planningDocument}
+      summaries={librarySummaries}
+      readSavedArchitecture={readSavedArchitecture}
+      serviceCatalog={planningServiceByKey}
+      onClose={() => {
+        setComparisonOpen(false);
+        fileActionsTriggerRef.current?.focus();
+      }}
+    /> : null}
     <div className={styles.planningToolbar}>
       <div className={styles.workspaceHeading}><h1>Architecture planner</h1></div>
       <div className={styles.planningActions}>
@@ -1284,6 +1301,7 @@ function PlanningWorkspace({ planning }) {
             <button className={styles.quietBtn} type="button" onClick={exportArchitecture}><Icon name="download" size={15} /> Export JSON</button>
             <button className={styles.quietBtn} type="button" onClick={exportArchitectureSvg}><Icon name="download" size={15} /> Export SVG</button>
             <button className={styles.quietBtn} type="button" onClick={duplicateArchitecture}><Icon name="layers" size={15} /> Duplicate architecture</button>
+            <button className={styles.quietBtn} type="button" aria-haspopup="dialog" onClick={() => setComparisonOpen(true)}><Icon name="list" size={15} /> Compare architecture</button>
             <button className={`${styles.quietBtn} ${styles.deleteArchitectureAction}`} type="button" onClick={() => deleteArchitecture(planningDocument.id)}><Icon name="trash" size={14} /> Delete architecture</button>
           </div>
         </details>
