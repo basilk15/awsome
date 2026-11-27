@@ -5,6 +5,12 @@ import styles from '../styles/Home.module.css';
 const PAGE_SIZE = 20;
 const changeKinds = ['added', 'removed', 'changed'];
 
+function captureDate(capturedAt) {
+  const isMilliseconds = typeof capturedAt === 'number' || (typeof capturedAt === 'string' && /^\+?\d+$/.test(capturedAt));
+  const date = new Date(isMilliseconds ? Number(capturedAt) : NaN);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function SnapshotValue({ value }) {
   if (value === undefined) return <i>Missing</i>;
   return typeof value === 'string' && value.length ? value : JSON.stringify(value, null, 2);
@@ -46,6 +52,8 @@ function ChangeGroup({ category, kind, items }) {
 
 export default function SnapshotComparison({ comparison, headingRef, onClose }) {
   const { earlier, later, diff } = comparison;
+  const earlierDate = captureDate(earlier.capturedAt);
+  const laterDate = captureDate(later.capturedAt);
   const [query, setQuery] = useState('');
   const words = query.trim().toLowerCase();
   const groups = useMemo(() => {
@@ -64,17 +72,17 @@ export default function SnapshotComparison({ comparison, headingRef, onClose }) 
   const total = snapshotChangeCount(diff);
   const uncertain = snapshotUncertainCount(diff);
   function exportReport() {
-    const describeScan = ({ id, profile, region, capturedAt, graph }) => ({
+    const describeScan = ({ id, profile, region, graph }, date) => ({
       id: id || null,
       profile,
       region,
-      capturedAt: new Date(Number(capturedAt)).toISOString(),
+      capturedAt: date?.toISOString() ?? null,
       warnings: graph?.warnings || []
     });
     const report = {
       version: 1,
-      earlier: describeScan(earlier),
-      later: describeScan(later),
+      earlier: describeScan(earlier, earlierDate),
+      later: describeScan(later, laterDate),
       filter: query.trim(),
       confirmedTotal: total,
       confirmedIncluded: matches,
@@ -97,8 +105,8 @@ export default function SnapshotComparison({ comparison, headingRef, onClose }) 
     </header>
     <p>{earlier.profile} / {earlier.region}</p>
     <dl className={styles.comparisonDates}>
-      <div><dt>Earlier scan</dt><dd>{new Date(Number(earlier.capturedAt)).toLocaleString()}</dd></div>
-      <div><dt>Later scan</dt><dd>{new Date(Number(later.capturedAt)).toLocaleString()}</dd></div>
+      <div><dt>Earlier scan</dt><dd>{earlierDate?.toLocaleString() ?? 'Unknown capture date'}</dd></div>
+      <div><dt>Later scan</dt><dd>{laterDate?.toLocaleString() ?? 'Unknown capture date'}</dd></div>
     </dl>
     {uncertain || earlier.graph?.warnings?.length || later.graph?.warnings?.length ? <p className={styles.comparisonCaution}>
       Inventory was incomplete in at least one scan.

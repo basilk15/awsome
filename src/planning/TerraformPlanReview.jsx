@@ -1,14 +1,15 @@
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import styles from '../../styles/Home.module.css';
 import { serializeTerraformChangeSummary } from './terraformPlan.mjs';
 
 const ACTION_LABELS = { delete: 'Deletions', replace: 'Replacements', update: 'Updates', create: 'Creations' };
 
-export default function TerraformPlanReview({ review, onFinish }) {
+export default function TerraformPlanReview({ review, onFinish, onClose }) {
   const dialogRef = useRef(null);
   const headingRef = useRef(null);
   const titleId = useId();
-  const { name, changes, nodes, edges, incomplete } = review;
+  const [importError, setImportError] = useState('');
+  const { name, changes, nodes, edges, incomplete, skippedResources, architectureIssue } = review;
   const hasGraph = nodes.length > 0;
   const hasChanges = Object.values(changes).some(addresses => addresses.length > 0);
 
@@ -19,8 +20,13 @@ export default function TerraformPlanReview({ review, onFinish }) {
   }, []);
 
   const finish = (importGraph) => {
+    const error = onFinish(importGraph);
+    if (error) {
+      setImportError(error);
+      return;
+    }
     dialogRef.current.close();
-    onFinish(importGraph);
+    onClose();
   };
 
   const exportChangeSummary = () => {
@@ -47,9 +53,11 @@ export default function TerraformPlanReview({ review, onFinish }) {
         </ul> : null}
       </div>)}
     </div> : <p className={styles.terraformImportNote}>No managed AWS deletions, replacements, updates, or creations.</p>}
-    <p className={styles.terraformImportNote}>{hasGraph
+    <p className={styles.terraformImportNote}>{architectureIssue || (hasGraph
       ? `Import ${nodes.length} ${nodes.length === 1 ? 'service' : 'services'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'} as a new architecture.`
-      : 'The proposed architecture has no supported AWS services to import.'}</p>
+      : 'The proposed architecture has no supported AWS services to import.')}</p>
+    {skippedResources ? <p>The plan contains {skippedResources} unsupported AWS {skippedResources === 1 ? 'resource' : 'resources'}.</p> : null}
+    {importError ? <div role="alert" className={`${styles.terraformImportNote} ${styles.planningFeedback} ${styles.planningFeedbackError}`}>{importError}</div> : null}
     <div className={`${styles.dialogActions} ${styles.terraformActions}`}>
       <button className={styles.secondaryBtn} type="button" onClick={exportChangeSummary}>Export change summary</button>
       <button className={styles.secondaryBtn} type="button" onClick={() => finish(false)}>{hasGraph ? 'Cancel' : 'Close'}</button>

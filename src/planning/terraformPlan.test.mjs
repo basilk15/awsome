@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createPlanningDocument, deserializePlanningDocument, serializePlanningDocument } from '../planningDocument.mjs';
+import { MAX_PLANNING_EDGES, MAX_PLANNING_NODES, createPlanningDocument, deserializePlanningDocument, serializePlanningDocument } from '../planningDocument.mjs';
 import { readTerraformPlan, serializeTerraformChangeSummary } from './terraformPlan.mjs';
 
 const AWS = 'registry.terraform.io/hashicorp/aws';
@@ -259,6 +259,33 @@ test('reviews deletion-only and unsupported-only plans without a graph', () => {
   assert.deepEqual(unsupported.changes.create, ['aws_iam_policy.new']);
   assert.deepEqual(unsupported.nodes, []);
   assert.equal(unsupported.skippedResources, 1);
+});
+
+test('preserves Terraform review and export when the planner service limit is exceeded', () => {
+  const resources = Array.from({ length: MAX_PLANNING_NODES + 1 }, (_, index) => resource(`aws_vpc.network_${index}`));
+  resources.push(resource('aws_iam_policy.unsupported', { value: 'secret-resource-data' }));
+  const review = read(plan(resources, { resource_changes: [change('aws_subnet.deleted', ['delete'])] }));
+  assert.deepEqual(review.nodes, []);
+  assert.deepEqual(review.edges, []);
+  assert.match(review.architectureIssue, /planner limit of 2000 services/);
+  assert.equal(review.skippedResources, 1);
+  const summary = JSON.parse(serializeTerraformChangeSummary(review));
+  assert.deepEqual(summary.changes.delete, ['aws_subnet.deleted']);
+  assert.doesNotMatch(JSON.stringify(review), /secret-/);
+  resources.push(resource('aws_vpc.invalid', {}, { name: 'mismatch' }));
+  assert.throws(() => read(plan(resources)), /invalid Terraform address/);
+});
+
+test('preserves Terraform review when the planner relationship limit is exceeded', () => {
+  const groupIds = Array.from({ length: 100 }, (_, index) => `sg-${index}`);
+  const groups = groupIds.map((id, index) => resource(`aws_security_group.group_${index}`, { id }));
+  const instances = Array.from({ length: Math.floor(MAX_PLANNING_EDGES / groupIds.length) + 1 }, (_, index) =>
+    resource(`aws_instance.worker_${index}`, { vpc_security_group_ids: groupIds }));
+  const review = read(plan([...groups, ...instances], { resource_changes: [change('aws_instance.old', ['delete'])] }));
+  assert.match(review.architectureIssue, /planner limit of 5000 relationships/);
+  assert.deepEqual(review.nodes, []);
+  assert.deepEqual(review.edges, []);
+  assert.deepEqual(review.changes.delete, ['aws_instance.old']);
 });
 
 test('serializes only the ordered change summary from a Terraform review', () => {

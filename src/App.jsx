@@ -1296,10 +1296,8 @@ function PlanningWorkspace({ planning }) {
       </div>
     </div>
     {feedback && !routineSaveFeedback ? <div className={`${styles.planningFeedback} ${styles[`planningFeedback${feedback.type.charAt(0).toUpperCase()}${feedback.type.slice(1)}`]}`} role={feedback.type === 'error' ? 'alert' : 'status'}><Icon name={feedback.type === 'error' ? 'info' : 'layers'} size={14} /><span>{feedback.text}</span></div> : null}
-    {terraformReview ? <TerraformPlanReview review={terraformReview} onFinish={(importGraph) => {
-      finishTerraformReview(importGraph);
-      fileActionsTriggerRef.current?.focus();
-    }} /> : null}
+    {terraformReview ? <TerraformPlanReview review={terraformReview} onFinish={finishTerraformReview}
+      onClose={() => fileActionsTriggerRef.current?.focus()} /> : null}
     <div className={styles.planningLayout} style={{ '--palette-width': `${paletteWidth}px` }}>
       <aside ref={paletteRef} className={`${styles.servicePalette} ${removalHover ? styles.servicePaletteRemovalTarget : ''}`} aria-label="AWS service palette">
         {removalHover ? <div className={styles.removalDropHint}>Release to remove from diagram</div> : null}

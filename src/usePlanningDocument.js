@@ -394,8 +394,10 @@ export default function usePlanningDocument(serviceCatalog) {
   }, [librarySummaries, persistDocument, replaceAndSave, serviceCatalog]);
 
   const finishTerraformReview = useCallback((importGraph) => {
-    setTerraformReview(null);
-    if (!importGraph || !terraformReview?.nodes.length) return;
+    if (!importGraph) {
+      setTerraformReview(null);
+      return;
+    }
     const { name, nodes, edges, skippedResources, incomplete } = terraformReview;
     const message = [
       `Imported ${nodes.length} ${nodes.length === 1 ? 'service' : 'services'} and ${edges.length} ${edges.length === 1 ? 'connection' : 'connections'} as “${name}”.`,
@@ -405,8 +407,9 @@ export default function usePlanningDocument(serviceCatalog) {
     try {
       createArchitectureFromGraph({ nodes, edges }, name, message);
     } catch (error) {
-      setFeedback({ type: 'error', text: `Could not import ${name}: ${error.message}` });
+      return `Could not import the architecture. ${error.message}`;
     }
+    setTerraformReview(null);
   }, [createArchitectureFromGraph, terraformReview]);
 
   const exportArchitecture = useCallback(() => {
