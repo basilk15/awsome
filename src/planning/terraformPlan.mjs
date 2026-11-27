@@ -65,8 +65,28 @@ const LINK_RESOURCES = new Set(['aws_route', 'aws_route_table_association', 'aws
 const LOAD_BALANCER_TYPES = new Map([['application', 'alb'], ['network', 'nlb'], ['gateway', 'elb']]);
 const RESOURCE_REFERENCE = /^([^.]+\.[^.[\]]+)(\[(?:\d+|"(?:[^"\\]|\\.)*")\])?(?:\.|$)/;
 
+class TerraformGraphCapacityError extends Error {}
+
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const array = value => Array.isArray(value) ? value : [];
+const isManagedAws = resource => resource?.mode === 'managed' && [AWS_PROVIDER, 'aws'].includes(resource.provider_name);
+
+function collectChanges(resourceChanges) {
+  const groups = { delete: [], replace: [], update: [], create: [] };
+  for (const entry of array(resourceChanges)) {
+    if (!isManagedAws(entry) || typeof entry.address !== 'string' || !entry.address.trim()) continue;
+    const actions = array(entry.change?.actions);
+    const [first, second] = actions;
+    if (actions.length === 2 && ((first === 'delete' && second === 'create')
+      || (first === 'create' && second === 'delete'))) {
+      groups.replace.push(entry.address);
+    } else if (actions.length === 1 && (first === 'delete' || first === 'update' || first === 'create')) {
+      groups[first].push(entry.address);
+    }
+  }
+  for (const addresses of Object.values(groups)) addresses.sort((left, right) => left.localeCompare(right));
+  return groups;
+}
 
 function expressionReferences(expression) {
   return isObject(expression) && !Object.hasOwn(expression, 'constant_value') ? array(expression.references) : [];
@@ -106,7 +126,7 @@ function collectEntries(root, configuration) {
     const prefix = address ? address + '.' : '';
     const expressions = new Map(array(configuration?.resources).map(resource => [resource?.address, resource?.expressions]));
     for (const resource of array(module.resources)) {
-      if (resource?.mode !== 'managed' || ![AWS_PROVIDER, 'aws'].includes(resource.provider_name)) continue;
+      if (!isManagedAws(resource)) continue;
       const { address: resourceAddress, name } = resource;
       if (typeof resourceAddress !== 'string' || !resourceAddress.startsWith(prefix)
         || typeof resource.type !== 'string' || typeof name !== 'string' || !name.trim()) {
@@ -194,22 +214,14 @@ function buildGraph(entries) {
   const byIdentity = new Map();
   const nodes = [];
   const edges = [];
-  let skippedResources = 0;
   for (const entry of entries) {
-    const key = serviceKey(entry);
-    if (!key) {
-      if (!LINK_RESOURCES.has(entry.type)) skippedResources += 1;
-      continue;
-    }
-    if (nodes.length >= MAX_PLANNING_NODES) {
-      throw new Error('The Terraform plan exceeds the planner limit of ' + MAX_PLANNING_NODES + ' services.');
-    }
+    if (!entry.key) continue;
     const { address, prefix, base } = entry;
     const label = address.length <= 160 ? address : address.slice(prefix.length);
     entry.node = {
       id: 'terraform-' + String(nodes.length + 1).padStart(4, '0'),
       name: label.slice(0, 160).trimEnd(),
-      serviceKey: key,
+      serviceKey: entry.key,
       width: DEFAULT_NODE_WIDTH,
       height: DEFAULT_NODE_HEIGHT,
       provenance: PROVENANCE,
@@ -229,7 +241,7 @@ function buildGraph(entries) {
     const signature = [source.node.id, target.node.id, label].join('\0');
     if (signatures.has(signature)) return;
     if (edges.length >= MAX_PLANNING_EDGES) {
-      throw new Error('The Terraform plan exceeds the planner limit of ' + MAX_PLANNING_EDGES + ' relationships.');
+      throw new TerraformGraphCapacityError('The Terraform plan exceeds the planner limit of ' + MAX_PLANNING_EDGES + ' relationships.');
     }
     signatures.add(signature);
     edges.push({
@@ -327,7 +339,7 @@ function buildGraph(entries) {
     }
   }
 
-  return { nodes: layoutTerraformResources(nodes, edges), edges, skippedResources };
+  return { nodes: layoutTerraformResources(nodes, edges), edges };
 }
 
 function planName(fileName, timestamp) {
@@ -355,7 +367,35 @@ export function readTerraformPlan(text, fileName = '') {
   }
   const root = plan.planned_values.root_module;
   const entries = isObject(root) ? collectEntries(root, plan.configuration?.root_module) : [];
-  const graph = buildGraph(entries);
-  if (!graph.nodes.length) throw new Error('The Terraform plan has no supported managed AWS resources to import.');
-  return { ...graph, name: planName(fileName, plan.timestamp), incomplete: plan.complete === false };
+  let services = 0;
+  let skippedResources = 0;
+  for (const entry of entries) {
+    entry.key = serviceKey(entry);
+    if (entry.key) services += 1;
+    else if (!LINK_RESOURCES.has(entry.type)) skippedResources += 1;
+  }
+  const review = {
+    changes: collectChanges(plan.resource_changes),
+    name: planName(fileName, plan.timestamp),
+    incomplete: plan.complete === false,
+    skippedResources
+  };
+  try {
+    if (services > MAX_PLANNING_NODES) {
+      throw new TerraformGraphCapacityError('The Terraform plan exceeds the planner limit of ' + MAX_PLANNING_NODES + ' services.');
+    }
+    return { ...review, ...buildGraph(entries) };
+  } catch (error) {
+    if (!(error instanceof TerraformGraphCapacityError)) throw error;
+    return { ...review, nodes: [], edges: [], architectureIssue: error.message };
+  }
+}
+
+export function serializeTerraformChangeSummary({ incomplete, changes }) {
+  const { delete: deletions, replace, update, create } = changes;
+  return JSON.stringify({
+    version: 1,
+    incomplete,
+    changes: { delete: deletions, replace, update, create }
+  }, null, 2);
 }

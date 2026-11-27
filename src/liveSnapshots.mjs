@@ -32,6 +32,36 @@ function stableValue(value) {
   return value;
 }
 
+const fieldLabels = new Map([
+  ['id', 'ID'], ['label', 'Name'], ['source', 'From'], ['target', 'To'],
+  ['region', 'Region'], ['type', 'Resource type'], ['resourceId', 'Resource ID'], ['details', 'Details']
+]);
+
+function snapshotFields(item) {
+  const fields = new Map();
+  for (const [key, value] of Object.entries(item || {})) {
+    if (key === 'details' && value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length) {
+      for (const [name, detail] of Object.entries(value)) fields.set(`details.${name}`, { label: name, value: detail });
+    } else {
+      fields.set(`item.${key}`, { label: fieldLabels.get(key) || key, value });
+    }
+  }
+  return fields;
+}
+
+export function snapshotChangeFields(before, after) {
+  const oldFields = snapshotFields(before);
+  const newFields = snapshotFields(after);
+  const keys = [...new Set([...oldFields.keys(), ...newFields.keys()])].sort((a, b) =>
+    Number(a.startsWith('details.')) - Number(b.startsWith('details.')) || a.localeCompare(b));
+  return keys.flatMap((key) => {
+    const oldField = oldFields.get(key);
+    const newField = newFields.get(key);
+    if (JSON.stringify(stableValue(oldField?.value)) === JSON.stringify(stableValue(newField?.value))) return [];
+    return [{ key, label: (newField || oldField).label, before: oldField?.value, after: newField?.value }];
+  });
+}
+
 function regionOf(data, graph) {
   if (typeof data?.region === 'string' && data.region) return data.region;
   const id = data?.id || data?.source || '';

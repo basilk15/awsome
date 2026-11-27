@@ -12,6 +12,7 @@ const MIN_NODE_WIDTH = 126;
 const MIN_NODE_HEIGHT = 68;
 export const MAX_PLANNING_NODES = 2000;
 export const MAX_PLANNING_EDGES = 5000;
+export const MAX_PLANNING_RESOURCE_ID_LENGTH = 240;
 
 export class PlanningDocumentError extends Error {
   constructor(message, code = 'invalid_document') {
@@ -171,9 +172,9 @@ export function normalizePlanningDocument(input, serviceCatalog, options = {}) {
 
     const provenance = optionalString(node.provenance, 80);
     const originalResourceLabel = optionalString(node.originalResourceLabel, 240);
-    const resourceId = optionalString(node.resourceId, 240);
+    const resourceId = optionalString(node.resourceId, MAX_PLANNING_RESOURCE_ID_LENGTH);
     const liveResourceType = optionalString(node.liveResourceType, 80);
-    const liveNodeId = optionalString(node.liveNodeId, 320);
+    const liveNodeId = optionalString(node.liveNodeId, 2048);
     const profile = optionalString(node.profile, 160);
     const region = optionalString(node.region, 80);
     const terraformAddress = optionalString(node.terraformAddress, 2048);
