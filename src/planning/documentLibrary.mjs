@@ -97,7 +97,7 @@ function removeItem(storage, key) {
   }
 }
 
-function summaryFromDocument(document) {
+export function summaryFromDocument(document) {
   return {
     id: document.id,
     name: document.name,
