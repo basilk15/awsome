@@ -407,6 +407,7 @@
 .comparisonGroup h3 { margin: 0; font-size: 14px; }
 .comparisonGroup h3 span { color: var(--muted); font-variant-numeric: tabular-nums; }
 .comparisonGroup ul { display: grid; gap: 6px; margin: 7px 0 0; padding-left: 20px; }
+.comparisonGroup li { white-space: break-spaces; }
 .comparisonItemValues { display: grid; gap: 2px; margin: 0; }
 
 .terraformReview.importDialog { width: min(590px, calc(100% - 44px)); }

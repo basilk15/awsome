@@ -2,6 +2,33 @@ import { useId, useLayoutEffect, useMemo, useState } from 'react';
 import styles from '../../styles/Home.module.css';
 import { compareArchitectures } from './architectureComparison.mjs';
 
+function getPlanLabels(plans) {
+  const nameCounts = new Map();
+  const labelCounts = new Map();
+  const labels = new Map();
+
+  for (const { name } of plans) {
+    nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+  }
+
+  for (const { id, name, nodeCount, edgeCount, updatedAt } of plans) {
+    let label = name;
+    if (nameCounts.get(name) > 1) {
+      const services = `${nodeCount} service${nodeCount === 1 ? '' : 's'}`;
+      const connections = `${edgeCount} connection${edgeCount === 1 ? '' : 's'}`;
+      label = `${name} · ${services} · ${connections} · Edited ${new Date(updatedAt).toLocaleString()}`;
+    }
+    labels.set(id, label);
+    labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+  }
+
+  for (const [id, label] of labels) {
+    if (labelCounts.get(label) > 1) labels.set(id, `${label} · ID ${encodeURIComponent(id)}`);
+  }
+
+  return labels;
+}
+
 function endpointName(endpoint, other) {
   return other && endpoint.id !== other.id && endpoint.name === other.name
     ? `${endpoint.name} (${endpoint.id})`
@@ -23,6 +50,13 @@ export default function ArchitectureComparison({ dialogRef, current, summaries, 
   const descriptionId = useId();
   const [selection, setSelection] = useState(null);
   const options = summaries.filter(({ id }) => id !== current.id);
+  const labels = getPlanLabels([...options, {
+    id: current.id,
+    name: current.name,
+    nodeCount: current.nodes.length,
+    edgeCount: current.edges.length,
+    updatedAt: summaries.find(({ id }) => id === current.id)?.updatedAt ?? current.updatedAt
+  }]);
   const baseline = selection?.document;
   const comparison = useMemo(() => baseline ? compareArchitectures(baseline, current) : null, [baseline, current]);
   const groups = comparison ? [
@@ -68,12 +102,12 @@ export default function ArchitectureComparison({ dialogRef, current, summaries, 
       <span>Saved baseline</span>
       <select value={selection?.id ?? ''} onChange={selectBaseline}>
         <option value="">Choose an architecture</option>
-        {options.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
+        {options.map(({ id }) => <option key={id} value={id}>{labels.get(id)}</option>)}
       </select>
     </label> : <p className={styles.comparisonStatus}>No other saved architectures to compare.</p>}
     <dl className={styles.comparisonPlans}>
-      {baseline ? <div><dt>Baseline</dt><dd>{baseline.name}</dd></div> : null}
-      <div><dt>Current</dt><dd>{current.name}</dd></div>
+      {baseline ? <div><dt>Baseline</dt><dd>{labels.get(selection.id) ?? baseline.name}</dd></div> : null}
+      <div><dt>Current</dt><dd>{labels.get(current.id)}</dd></div>
     </dl>
     {selection?.error ? <div className={styles.comparisonError} role="alert">{selection.error} Select another saved architecture.</div> : null}
     {comparison ? <p className={styles.comparisonStatus} role="status">
